@@ -1,7 +1,7 @@
 import { useCommand } from "@/shell/commands/command"
 import { useLayout } from "@/shell/state/layout"
 import { useLanguage } from "@/runtime/i18n/language"
-import { useServers } from "@/runtime/server/registry"
+import { serverName } from "@/runtime/server/registry"
 import { displayName } from "@opencode/ui/project-avatar"
 import { sessionLabel } from "@/session/title"
 import { makeEventListener } from "@solid-primitives/event-listener"
@@ -17,7 +17,6 @@ export function createHomeSessionSearchController(home: HomeController, sessions
   const command = useCommand()
   const language = useLanguage()
   const layout = useLayout()
-  const servers = useServers()
 
   const [state, setState] = createStore<{
     value: string
@@ -71,7 +70,7 @@ export function createHomeSessionSearchController(home: HomeController, sessions
     if (home.server.list().length > 1) {
       const conn = home.server.focused()
 
-      if (conn) return language.t("home.sessions.search.placeholder.scoped", { scope: servers.label(conn) })
+      if (conn) return language.t("home.sessions.search.placeholder.scoped", { scope: serverName(conn) })
     }
 
     return language.t("home.sessions.search.placeholder")
@@ -91,11 +90,10 @@ export function createHomeSessionSearchController(home: HomeController, sessions
     if (layout.home.searchFocus.take()) focus()
   })
 
-  // Home's Find focuses its session search, so Settings > Shortcuts lists one Find and one Search sessions.
   command.register("home.search", () => [
     {
-      id: "session.search",
-      title: language.t("session.search.placeholder"),
+      id: "home.sessions.search.focus",
+      title: placeholder(),
       keybind: "mod+f",
       hidden: true,
       onSelect: focus,

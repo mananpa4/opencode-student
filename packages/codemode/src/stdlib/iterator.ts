@@ -1,3 +1,4 @@
+import { Cause, Effect, Exit } from "effect"
 import { applyCollectionCallback } from "../interpreter/callback.js"
 import type { Interpreter } from "../interpreter/interpreter.js"
 import { rangeError, typeError } from "../interpreter/model.js"
@@ -9,14 +10,13 @@ import {
   define,
   hasPrototype,
   hidden,
-  iteratorResult,
   IteratorObj,
   Obj,
+  record,
   type Step,
   type Value,
 } from "../interpreter/objects.js"
 import { describeValue } from "../interpreter/references.js"
-import { type Eval, Interruption } from "../interpreter/runner.js"
 
 const finished: Step = { done: true, value: undefined }
 
@@ -28,23 +28,16 @@ export const iteratorGlobals = <R>(ctx: Interpreter<R>) => {
   const method = (name: string) => `Iterator.prototype.${name}`
 
   // A step that runs program code: when it throws, close the source first, as IteratorClose does.
-  const guarded = function* <A>(source: Cursor, body: Eval<A>): Eval<A> {
-    try {
-      return yield* body
-    } catch (error) {
-      if (error instanceof Interruption) throw error
-      try {
-        yield* source.close()
-      } catch {
-        // The step's failure wins over a failing close.
-      }
-      throw error
-    }
-  }
+  const guarded = <A>(source: Cursor<R>, body: Effect.Effect<A, unknown, R>) =>
+    Effect.flatMap(Effect.exit(body), (exit) => {
+      if (Exit.isSuccess(exit)) return Effect.succeed(exit.value)
+      if (Cause.hasInterruptsOnly(exit.cause)) return Effect.failCause(exit.cause)
+      return Effect.andThen(Effect.exit(source.close), Effect.failCause(exit.cause))
+    })
 
   // A lazy helper: `pull` advances it once. Once it reports done, throws, or is closed, it stays done. A callback
   // that re-enters its own helper is a TypeError, as for a running generator.
-  const helper = (source: Cursor, pull: () => Eval<Step>, close = source.close) => {
+  const helper = (source: Cursor<R>, pull: Effect.Effect<Step, unknown, R>, close = source.close) => {
     let done = false
     let running = false
     const enter = () => {
@@ -52,40 +45,37 @@ export const iteratorGlobals = <R>(ctx: Interpreter<R>) => {
       running = true
     }
     return new IteratorObj(builtins.IteratorHelper, {
-      next: function* () {
-        if (done) return finished
+      next: Effect.suspend(() => {
+        if (done) return Effect.succeed(finished)
         enter()
-        try {
-          const step = yield* pull()
-          done = step.done
-          return step
-        } catch (error) {
-          done = true
-          throw error
-        } finally {
+        return Effect.flatMap(Effect.exit(pull), (exit) => {
           running = false
-        }
-      },
-      close: function* () {
-        if (done) return
+          done = Exit.isSuccess(exit) ? exit.value.done : true
+          return exit
+        })
+      }),
+      close: Effect.suspend(() => {
+        if (done) return Effect.void
         enter()
         done = true
-        try {
-          yield* close()
-        } finally {
-          running = false
-        }
-      },
+        return Effect.ensuring(
+          close,
+          Effect.sync(() => {
+            running = false
+          }),
+        )
+      }),
     })
   }
 
   // GetIteratorFlattenable: an iterable by `[Symbol.iterator]`, otherwise the object itself as an iterator.
-  const flattenable = function* (value: Value, name: string, strings: boolean): Eval<Cursor> {
-    if (typeof value === "string" ? !strings : !(value instanceof Obj)) {
-      throw typeError(`${name} expects an iterable or iterator, received ${describeValue(value)}.`)
-    }
-    return (yield* ctx.iterate(value)) ?? ctx.iterateDirect(value)
-  }
+  const flattenable = (value: Value, name: string, strings: boolean) =>
+    Effect.gen(function* () {
+      if (typeof value === "string" ? !strings : !(value instanceof Obj)) {
+        throw typeError(`${name} expects an iterable or iterator, received ${describeValue(value)}.`)
+      }
+      return (yield* ctx.iterate(value)) ?? ctx.iterateDirect(value)
+    })
 
   const limit = (value: Value, name: string) => {
     const count = Math.trunc(coerceToNumber(value))
@@ -99,10 +89,10 @@ export const iteratorGlobals = <R>(ctx: Interpreter<R>) => {
     [
       "next",
       0,
-      function* (thisValue) {
-        const step = yield* receiver(IteratorObj, thisValue, method("next")).cursor.next()
-        return iteratorResult(builtins.Object, step.value, step.done)
-      },
+      (thisValue) =>
+        Effect.map(receiver(IteratorObj, thisValue, method("next")).cursor.next, (step) =>
+          record(builtins.Object, { value: step.value, done: step.done }),
+        ),
     ],
     [
       "map",
@@ -111,11 +101,14 @@ export const iteratorGlobals = <R>(ctx: Interpreter<R>) => {
         const source = ctx.iterateDirect(thisValue)
         const apply = applyCollectionCallback(ctx, args[0], method("map"))
         let counter = 0
-        return helper(source, function* () {
-          const step = yield* source.next()
-          if (step.done) return finished
-          return { done: false, value: yield* guarded(source, apply([step.value, counter++])) }
-        })
+        return helper(
+          source,
+          Effect.gen(function* () {
+            const step = yield* source.next
+            if (step.done) return finished
+            return { done: false, value: yield* guarded(source, apply([step.value, counter++])) }
+          }),
+        )
       },
     ],
     [
@@ -125,13 +118,16 @@ export const iteratorGlobals = <R>(ctx: Interpreter<R>) => {
         const source = ctx.iterateDirect(thisValue)
         const apply = applyCollectionCallback(ctx, args[0], method("filter"))
         let counter = 0
-        return helper(source, function* () {
-          while (true) {
-            const step = yield* source.next()
-            if (step.done) return finished
-            if (yield* guarded(source, apply([step.value, counter++]))) return step
-          }
-        })
+        return helper(
+          source,
+          Effect.gen(function* () {
+            while (true) {
+              const step = yield* source.next
+              if (step.done) return finished
+              if (yield* guarded(source, apply([step.value, counter++]))) return step
+            }
+          }),
+        )
       },
     ],
     [
@@ -140,14 +136,17 @@ export const iteratorGlobals = <R>(ctx: Interpreter<R>) => {
       (thisValue, args) => {
         const source = ctx.iterateDirect(thisValue)
         let remaining = limit(args[0], "take")
-        return helper(source, function* () {
-          if (remaining === 0) {
-            yield* source.close()
-            return finished
-          }
-          remaining -= 1
-          return yield* source.next()
-        })
+        return helper(
+          source,
+          Effect.gen(function* () {
+            if (remaining === 0) {
+              yield* source.close
+              return finished
+            }
+            remaining -= 1
+            return yield* source.next
+          }),
+        )
       },
     ],
     [
@@ -156,14 +155,17 @@ export const iteratorGlobals = <R>(ctx: Interpreter<R>) => {
       (thisValue, args) => {
         const source = ctx.iterateDirect(thisValue)
         let remaining = limit(args[0], "drop")
-        return helper(source, function* () {
-          while (remaining > 0) {
-            remaining -= 1
-            const step = yield* source.next()
-            if (step.done) return finished
-          }
-          return yield* source.next()
-        })
+        return helper(
+          source,
+          Effect.gen(function* () {
+            while (remaining > 0) {
+              remaining -= 1
+              const step = yield* source.next
+              if (step.done) return finished
+            }
+            return yield* source.next
+          }),
+        )
       },
     ],
     [
@@ -173,126 +175,139 @@ export const iteratorGlobals = <R>(ctx: Interpreter<R>) => {
         const source = ctx.iterateDirect(thisValue)
         const apply = applyCollectionCallback(ctx, args[0], method("flatMap"))
         let counter = 0
-        let inner: Cursor | undefined
+        let inner: Cursor<R> | undefined
         return helper(
           source,
-          function* () {
+          Effect.gen(function* () {
             while (true) {
               if (inner !== undefined) {
-                const step = yield* guarded(source, inner.next())
+                const step = yield* guarded(source, inner.next)
                 if (!step.done) return step
                 inner = undefined
               }
-              const step = yield* source.next()
+              const step = yield* source.next
               if (step.done) return finished
-              const mapped = yield* guarded(source, apply([step.value, counter++]))
-              inner = yield* guarded(source, flattenable(mapped, method("flatMap"), false))
+              inner = yield* guarded(
+                source,
+                Effect.flatMap(apply([step.value, counter++]), (mapped) =>
+                  flattenable(mapped, method("flatMap"), false),
+                ),
+              )
             }
-          },
-          function* () {
-            if (inner !== undefined) yield* inner.close()
-            yield* source.close()
-          },
+          }),
+          Effect.suspend(() => (inner === undefined ? source.close : Effect.andThen(inner.close, source.close))),
         )
       },
     ],
     [
       "reduce",
       1,
-      function* (thisValue, args) {
+      (thisValue, args) => {
         const source = ctx.iterateDirect(thisValue)
         const apply = applyCollectionCallback(ctx, args[0], method("reduce"))
-        let counter = 0
-        let accumulator = args[1]
-        if (args.length < 2) {
-          const first = yield* source.next()
-          if (first.done) throw typeError("Iterator.prototype.reduce of an empty iterator with no initial value.")
-          accumulator = first.value
-          counter = 1
-        }
-        while (true) {
-          const step = yield* source.next()
-          if (step.done) return accumulator
-          accumulator = yield* guarded(source, apply([accumulator, step.value, counter++]))
-        }
+        return Effect.gen(function* () {
+          let counter = 0
+          let accumulator = args[1]
+          if (args.length < 2) {
+            const first = yield* source.next
+            if (first.done) throw typeError("Iterator.prototype.reduce of an empty iterator with no initial value.")
+            accumulator = first.value
+            counter = 1
+          }
+          while (true) {
+            const step = yield* source.next
+            if (step.done) return accumulator
+            accumulator = yield* guarded(source, apply([accumulator, step.value, counter++]))
+          }
+        })
       },
     ],
     [
       "toArray",
       0,
-      function* (thisValue) {
+      (thisValue) => {
         const source = ctx.iterateDirect(thisValue)
-        const items: Array<Value> = []
-        while (true) {
-          const step = yield* source.next()
-          if (step.done) return new Arr(builtins.Array, items)
-          items.push(step.value)
-        }
+        return Effect.gen(function* () {
+          const items: Array<Value> = []
+          while (true) {
+            const step = yield* source.next
+            if (step.done) return new Arr(builtins.Array, items)
+            items.push(step.value)
+          }
+        })
       },
     ],
     [
       "forEach",
       1,
-      function* (thisValue, args) {
+      (thisValue, args) => {
         const source = ctx.iterateDirect(thisValue)
         const apply = applyCollectionCallback(ctx, args[0], method("forEach"))
-        let counter = 0
-        while (true) {
-          const step = yield* source.next()
-          if (step.done) return undefined
-          yield* guarded(source, apply([step.value, counter++]))
-        }
+        return Effect.gen(function* () {
+          let counter = 0
+          while (true) {
+            const step = yield* source.next
+            if (step.done) return undefined
+            yield* guarded(source, apply([step.value, counter++]))
+          }
+        })
       },
     ],
     [
       "some",
       1,
-      function* (thisValue, args) {
+      (thisValue, args) => {
         const source = ctx.iterateDirect(thisValue)
         const apply = applyCollectionCallback(ctx, args[0], method("some"))
-        let counter = 0
-        while (true) {
-          const step = yield* source.next()
-          if (step.done) return false
-          if (yield* guarded(source, apply([step.value, counter++]))) {
-            yield* source.close()
-            return true
+        return Effect.gen(function* () {
+          let counter = 0
+          while (true) {
+            const step = yield* source.next
+            if (step.done) return false
+            if (yield* guarded(source, apply([step.value, counter++]))) {
+              yield* source.close
+              return true
+            }
           }
-        }
+        })
       },
     ],
     [
       "every",
       1,
-      function* (thisValue, args) {
+      (thisValue, args) => {
         const source = ctx.iterateDirect(thisValue)
         const apply = applyCollectionCallback(ctx, args[0], method("every"))
-        let counter = 0
-        while (true) {
-          const step = yield* source.next()
-          if (step.done) return true
-          if (!(yield* guarded(source, apply([step.value, counter++])))) {
-            yield* source.close()
-            return false
+        return Effect.gen(function* () {
+          let counter = 0
+          while (true) {
+            const step = yield* source.next
+            if (step.done) return true
+            if (!(yield* guarded(source, apply([step.value, counter++])))) {
+              yield* source.close
+              return false
+            }
           }
-        }
+        })
       },
     ],
     [
       "find",
       1,
-      function* (thisValue, args) {
+      (thisValue, args) => {
         const source = ctx.iterateDirect(thisValue)
         const apply = applyCollectionCallback(ctx, args[0], method("find"))
-        let counter = 0
-        while (true) {
-          const step = yield* source.next()
-          if (step.done) return undefined
-          if (yield* guarded(source, apply([step.value, counter++]))) {
-            yield* source.close()
-            return step.value
+        return Effect.gen(function* () {
+          let counter = 0
+          while (true) {
+            const step = yield* source.next
+            if (step.done) return undefined
+            if (yield* guarded(source, apply([step.value, counter++]))) {
+              yield* source.close
+              return step.value
+            }
           }
-        }
+        })
       },
     ],
   ])
@@ -302,28 +317,31 @@ export const iteratorGlobals = <R>(ctx: Interpreter<R>) => {
     [
       "return",
       0,
-      function* (thisValue) {
-        yield* receiver(IteratorObj, thisValue, "Iterator.prototype.return").cursor.close()
-        return iteratorResult(builtins.Object, undefined, true)
-      },
+      (thisValue) =>
+        Effect.map(receiver(IteratorObj, thisValue, "Iterator.prototype.return").cursor.close, () =>
+          record(builtins.Object, { value: undefined, done: true }),
+        ),
     ],
   ])
 
-  const iterator = constructor(builtins, proto, {
+  const iterator = constructor<R>(builtins, proto, {
     name: "Iterator",
     length: 0,
     call: requiresNew("Iterator"),
-    construct: () => {
-      throw typeError("Iterator is abstract; use Iterator.from(...) or a built-in iterator.")
-    },
+    construct: () =>
+      Effect.sync(() => {
+        throw typeError("Iterator is abstract; use Iterator.from(...) or a built-in iterator.")
+      }),
   })
   define(
     iterator,
     "from",
-    fn(builtins, "from", 1, function* (_, args) {
-      if (args[0] instanceof Obj && hasPrototype(args[0], proto)) return args[0]
-      return new IteratorObj(builtins.IteratorHelper, yield* flattenable(args[0], "Iterator.from", true))
-    }),
+    fn(builtins, "from", 1, (_, args) =>
+      Effect.gen(function* () {
+        if (args[0] instanceof Obj && hasPrototype(args[0], proto)) return args[0]
+        return new IteratorObj(builtins.IteratorHelper, yield* flattenable(args[0], "Iterator.from", true))
+      }),
+    ),
     hidden,
   )
   return iterator

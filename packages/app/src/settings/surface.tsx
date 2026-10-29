@@ -1,28 +1,28 @@
 import { useLocation, useNavigate } from "@solidjs/router"
-import { batch, createEffect, createMemo, on } from "solid-js"
+import { batch, createEffect, on } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode/ui/context"
 import { useLayout, type LayoutRoute } from "@/shell/state/layout"
-import { useTabs } from "@/shell/tabs/tabs"
-import { ServerConnection } from "@/runtime/server/registry"
 import { useCommand } from "@/shell/commands/command"
-import { createSettingsPages } from "@/runtime/plugin/settings-pages"
+import { createSettingsPages } from "@/runtime/extension/settings-pages"
 import { useSettingsServers } from "./servers/inventory"
 import {
-  isPluginTab,
+  isExtensionTab,
   isProjectTab,
   isRootTab,
+  isServerTab,
   parseSettingsView,
   settingsViewUrl,
-  type SettingsPluginTab,
+  type SettingsExtensionTab,
   type SettingsProjectTab,
   type SettingsRootTab,
+  type SettingsServerTab,
   type SettingsTransientView,
   type SettingsView,
 } from "./route"
 
 export type {
-  SettingsPluginTab,
+  SettingsExtensionTab,
   SettingsHostView,
   SettingsProjectTab,
   SettingsRootTab,
@@ -38,48 +38,17 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
     const layout = useLayout()
     const command = useCommand()
     const servers = useSettingsServers()
-    const tabs = useTabs()
 
     const location = useLocation<{
       settings?: { route: Exclude<LayoutRoute, { type: "settings" }>; view?: SettingsTransientView }
     }>()
 
-    const plugins = createSettingsPages()
+    const extensions = createSettingsPages()
     const open = () => layout.route().type === "settings"
+    const source = () => location.state?.settings?.route ?? { type: "home" as const }
 
-    // While Settings is closed, the current tab is where it would open from.
-    const source = () => {
-      const route = layout.route()
-
-      if (route.type !== "settings") return route
-
-      return location.state?.settings?.route ?? { type: "home" as const }
-    }
-
-    const view = () => parseSettingsView(location.search, location.state?.settings?.view, plugins.tabs())
-
-    // The server of the tab settings opened from, which per-server pages show until another is selected.
-    const sourceServer = createMemo(() => {
-      const route = source()
-
-      if (route.type === "session") return route.server
-
-      if (route.type === "draft")
-        return tabs.store.find((item) => item.type === "draft" && item.draftID === route.draftID)?.server
-
-      return layout.home.selection().server
-    })
-
-    const server = createMemo(() => {
-      const list = servers()
-      const key = view().server ?? sourceServer()
-
-      return (
-        list.find((item) => item.key === key) ??
-        list.find((item) => !!item.connection && ServerConnection.local(item.connection)) ??
-        list[0]
-      )
-    })
+    const view = () =>
+      parseSettingsView(location.search, servers().length > 1, location.state?.settings?.view, extensions.tabs())
 
     const [search, setSearch] = createStore<{
       query: string
@@ -134,10 +103,7 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
       active: open,
       route: source,
       view,
-      /** The server per-server pages show; undefined only while no server is listed. */
-      server,
-      sourceServer,
-      plugins,
+      extensions,
       search: {
         state: search,
         input(query: string) {
@@ -172,34 +138,34 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
           return true
         },
       },
-      open(tab: SettingsRootTab | SettingsPluginTab = "general") {
+      open(tab: SettingsRootTab | SettingsExtensionTab = "general") {
         show({ type: "root", tab })
       },
-      /** Shows another server on the per-server pages, staying on the current page. */
-      selectServer(server: string) {
-        const current = view()
-
-        if (current.type !== "root") return
-        show({ ...current, server, target: undefined })
+      openServer(server: string, tab: SettingsServerTab = "general") {
+        show({ type: "server", server, tab })
       },
-      openServers(server?: string) {
-        show({ type: "root", tab: "servers", server })
-      },
-      replace(view: SettingsView) {
-        show(view)
+      replaceServer(server: string, tab: SettingsServerTab = "general") {
+        show({ type: "server", server, tab })
       },
       openProject(input: { server: string; project: string; tab?: SettingsProjectTab }) {
-        show({ type: "project", ...input, tab: input.tab ?? "general" })
+        show({
+          type: "project",
+          ...input,
+          parent: servers().length > 1 ? "server" : "root",
+          tab: input.tab ?? "general",
+        })
       },
       select(tab: string) {
         const current = view()
 
         const next: SettingsView =
-          current.type === "root" && (isRootTab(tab) || isPluginTab(tab, plugins.tabs()))
+          current.type === "root" && (isRootTab(tab) || isExtensionTab(tab, extensions.tabs()))
             ? { ...current, tab }
-            : current.type === "project" && isProjectTab(tab)
+            : current.type === "server" && isServerTab(tab)
               ? { ...current, tab }
-              : current
+              : current.type === "project" && isProjectTab(tab)
+                ? { ...current, tab }
+                : current
 
         show({ ...next, target: undefined, subtab: undefined })
       },
@@ -215,7 +181,12 @@ export const { use: useSettingsSurface, provider: SettingsSurfaceProvider } = cr
           return
         }
 
-        show({ type: "root", tab: "projects", server: current.server })
+        const parent: SettingsView =
+          current.type === "server" || current.parent === "root"
+            ? { type: "root", tab: current.type === "server" ? "general" : "projects" }
+            : { type: "server", server: current.server, tab: "projects" }
+
+        show(parent)
       },
       close() {
         if (open()) command.trigger("common.goBack")

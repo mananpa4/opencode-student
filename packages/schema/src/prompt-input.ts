@@ -2,7 +2,7 @@ export * as PromptInput from "./prompt-input.js"
 
 import { Schema } from "effect"
 import { AgentAttachment, PromptMention } from "./prompt.js"
-import { optional } from "./schema.js"
+import { optional, statics } from "./schema.js"
 import { Skill } from "./skill.js"
 
 export interface FileAttachment extends Schema.Schema.Type<typeof FileAttachment> {}
@@ -11,7 +11,13 @@ export const FileAttachment = Schema.Struct({
   name: Schema.String.pipe(optional),
   description: Schema.String.pipe(optional),
   mention: PromptMention.pipe(optional),
-}).annotate({ identifier: "PromptInput.FileAttachment" })
+})
+  .annotate({ identifier: "PromptInput.FileAttachment" })
+  .pipe(
+    statics((schema) => ({
+      create: (input: FileAttachment) => schema.make(input),
+    })),
+  )
 
 export interface Prompt extends Schema.Schema.Type<typeof Prompt> {}
 export interface SkillAttachment extends Schema.Schema.Type<typeof SkillAttachment> {}

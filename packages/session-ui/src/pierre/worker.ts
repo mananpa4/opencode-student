@@ -1,11 +1,17 @@
 import { WorkerPoolManager } from "@pierre/diffs/worker"
-import DiffsWorkerUrl from "@pierre/diffs/worker/worker.js?worker&url"
-import { highlightOptions } from "./index"
+import ShikiWorkerUrl from "@pierre/diffs/worker/worker.js?worker&url"
+import { registerOpenCodeTheme } from "@opencode/ui/context/marked-theme-register"
+
+registerOpenCodeTheme()
+
+export function workerFactory(): Worker {
+  return new Worker(ShikiWorkerUrl, { type: "module" })
+}
 
 function createPool(lineDiffType: "none" | "word-line") {
   const pool = new WorkerPoolManager(
     {
-      workerFactory: () => new Worker(DiffsWorkerUrl, { type: "module" }),
+      workerFactory,
       // poolSize defaults to 8. More workers = more parallelism but
       // also more memory. Too many can actually slow things down.
       // NOTE: 2 is probably better for OpenCode, as I think 8 might be
@@ -14,11 +20,12 @@ function createPool(lineDiffType: "none" | "word-line") {
       poolSize: 2,
     },
     {
-      ...highlightOptions,
+      theme: "OpenCode",
       lineDiffType,
       // Pierre renders with the pool's options, not the viewer's, whenever the pool works. The "none" pool only
       // serves diffs above the large-file threshold, so it carries the plain-text fallback the viewer requests.
       ...(lineDiffType === "none" && { maxLineDiffLength: 0, tokenizeMaxLineLength: 1 }),
+      preferredHighlighter: "shiki-wasm",
     },
   )
 
@@ -43,4 +50,13 @@ export function getWorkerPool(lineDiffType: "none" | "word-line" = "word-line"):
   if (!diff) diff = createPool("word-line")
 
   return diff
+}
+
+export function getWorkerPools() {
+  const pool = getWorkerPool()
+
+  return {
+    unified: pool,
+    split: pool,
+  }
 }

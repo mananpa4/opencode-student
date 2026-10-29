@@ -6,7 +6,7 @@ import {
   ToolResultPart,
   type ContentPart,
   type ProviderMetadata,
-} from "@opencode/ai/effect"
+} from "@opencode/ai"
 import type { Model } from "@opencode/schema/model"
 import { Option, Schema } from "effect"
 import { fileURLToPath } from "url"
@@ -103,7 +103,6 @@ const userAttachmentContent = (files: readonly FileAttachment[]) => {
 }
 
 const decodeToolInput = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
-const decodeNativeWindow = Schema.decodeUnknownSync(SessionHistory.NativeWindow)
 
 const providerMetadata = (
   provider: string,
@@ -153,8 +152,8 @@ const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: Provid
 }
 
 const assistant = (message: SessionMessage.Assistant, model: Model.Ref, providerMetadataKey: string) => {
-  const sameProvider = message.model.providerID === model.providerID
-  const sameModel = sameProvider && message.model.id === model.id
+  const sameProvider = String(message.model.providerID) === String(model.providerID)
+  const sameModel = sameProvider && String(message.model.id) === String(model.id)
   const reuseProviderMetadata = sameModel && message.error === undefined
   const reasoningInterrupted = message.content.some(
     (item) => item.type === "reasoning" && item.time !== undefined && item.time.completed === undefined,
@@ -293,7 +292,8 @@ function toLLMMessage(message: SessionMessage.Info, model: Model.Ref, providerMe
     case "compaction": {
       if (message.status !== "completed") return []
       // History selection only keeps native windows the target model can replay.
-      if (message.native?.messages !== undefined) return [...decodeNativeWindow(message.native.messages)]
+      if (message.native?.messages !== undefined)
+        return [...Schema.decodeUnknownSync(SessionHistory.NativeWindow)(message.native.messages)]
       const kept = SessionRecentText.kept(message)
       return [
         Message.make({

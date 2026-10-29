@@ -1,10 +1,8 @@
-import { type LLMEvent, type ProviderMetadata, type ToolResultValue } from "@opencode/ai/effect"
-import { isRecord } from "@opencode/util/record"
+import { type LLMEvent, type ProviderMetadata, type ToolResultValue } from "@opencode/ai"
 import type { Agent } from "@opencode/schema/agent"
 import type { Model } from "@opencode/schema/model"
 import type { RelativePath } from "@opencode/schema/schema"
 import type { Snapshot } from "@opencode/schema/snapshot"
-import type { TokenUsage } from "@opencode/schema/token-usage"
 import { Effect, Fiber, Iterable } from "effect"
 import { isReadonlyArrayNonEmpty } from "effect/Array"
 import { Bus } from "../../bus.js"
@@ -13,9 +11,9 @@ import { SessionMessage } from "../message.js"
 import { SessionSchema } from "../schema.js"
 import { SessionError } from "@opencode/schema/session-error"
 import { Money } from "@opencode/schema/money"
+import { SessionUsage } from "../usage.js"
 import { contentFilterError } from "../to-session-error.js"
 import type { Tool } from "../../tool.js"
-import { stringify } from "../../tool/runtime.js"
 
 type Input = {
   readonly sessionID: SessionSchema.ID
@@ -28,7 +26,8 @@ type Input = {
   readonly assistantMessageID: SessionMessage.ID
 }
 
-const asRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : { value })
+const asRecord = (value: unknown): Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : { value }
 
 const INPUT_EXCERPT_LIMIT = 2048
 
@@ -68,13 +67,22 @@ export interface StepRecord {
     readonly finish: Extract<LLMEvent, { type: "step-finish" }>["reason"]["normalized"]
     readonly rawFinish?: string
     readonly native?: SessionMessage.Native
-    readonly usage: Extract<LLMEvent, { type: "step-finish" }>["usage"]
+    readonly tokens: ReturnType<typeof SessionUsage.tokens>
   }
   readonly needsContinuation: boolean
 }
 
 /** Derives canonical model content from a provider-hosted tool result. */
 type NonEmptyContent = readonly [Tool.Content, ...Tool.Content[]]
+
+const stringify = (value: unknown) => {
+  if (typeof value === "string") return value
+  try {
+    return JSON.stringify(value) ?? String(value)
+  } catch {
+    return String(value)
+  }
+}
 
 const hostedContent = (result: ToolResultValue): NonEmptyContent => {
   if (result.type === "content" && isReadonlyArrayNonEmpty(result.value)) return result.value
@@ -145,7 +153,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
   const native = (metadata: ProviderMetadata | undefined) => metadata?.[input.providerMetadataKey]
   const fragments = (
     name: string,
-    ended: (id: string, value: string, ordinal: number, native?: SessionMessage.Native) => Effect.Effect<void>,
+    ended: (id: string, value: string, ordinal: number, native?: Record<string, unknown>) => Effect.Effect<void>,
     delta?: (id: string, value: string, ordinal: number) => Effect.Effect<void>,
     single = false,
   ) => {
@@ -154,11 +162,11 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
       readonly values: string[]
       pending: string
       timer?: Fiber.Fiber<void>
-      native?: SessionMessage.Native
+      native?: Record<string, unknown>
     }
     const chunks = new Map<string, Fragment>()
     let nextOrdinal = 0
-    const start = (id: string, native?: SessionMessage.Native) =>
+    const start = (id: string, native?: Record<string, unknown>) =>
       Effect.suspend(() => {
         if (chunks.has(id)) return Effect.die(new Error(`Duplicate ${name} start: ${id}`))
         if (single && chunks.size > 0) return Effect.die(new Error(`${name} start before end: ${id}`))
@@ -177,7 +185,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
       yield* delta(id, value, current.ordinal)
       return undefined
     }, Effect.uninterruptible)
-    const append = Effect.fnUntraced(function* (id: string, value: string, native?: SessionMessage.Native) {
+    const append = Effect.fnUntraced(function* (id: string, value: string, native?: Record<string, unknown>) {
       const current = chunks.get(id)
       if (!current) return yield* Effect.die(new Error(`${name} delta before start: ${id}`))
       current.values.push(value)
@@ -201,7 +209,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
       }
       return current.ordinal
     })
-    const end = Effect.fnUntraced(function* (id: string, native?: SessionMessage.Native, value?: string) {
+    const end = Effect.fnUntraced(function* (id: string, native?: Record<string, unknown>, value?: string) {
       const current = chunks.get(id)
       if (!current) return yield* Effect.die(new Error(`${name} end before start: ${id}`))
       if (current.timer) yield* Fiber.interrupt(current.timer)
@@ -411,7 +419,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
 
   const publishStepFailure = Effect.fnUntraced(function* (details?: {
     readonly cost?: Money.USD
-    readonly tokens?: TokenUsage.Info
+    readonly tokens?: ReturnType<typeof SessionUsage.tokens>
     readonly snapshot?: Snapshot.ID
     readonly files?: readonly RelativePath[]
   }) {
@@ -573,7 +581,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
           finish: event.reason.normalized,
           rawFinish: event.reason.raw,
           native: native(event.providerMetadata),
-          usage: event.usage,
+          tokens: SessionUsage.tokens(event.usage),
         }
         if (event.reason.normalized === "content-filter") {
           providerFailed = true

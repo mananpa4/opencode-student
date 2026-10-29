@@ -17,11 +17,7 @@ export type PastedText = {
   }
 }
 
-// `path` is the local file a pasted attachment was read from. It stays in the TUI.
-export type PromptFile = Types.DeepMutable<PromptInput.FileAttachment> & { path?: string }
-
-export type PromptInfo = Types.DeepMutable<Pick<PromptInput.Prompt, "text" | "agents" | "skills">> & {
-  files?: PromptFile[]
+export type PromptInfo = Types.DeepMutable<Pick<PromptInput.Prompt, "text" | "files" | "agents" | "skills">> & {
   pasted: PastedText[]
   mode?: "normal" | "shell"
 }

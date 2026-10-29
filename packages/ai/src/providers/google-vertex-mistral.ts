@@ -90,9 +90,9 @@ export const provider = {
   configure,
 }
 
-export const model: ProviderPackage.Model<Settings, MistralChat.ProviderOptionsInput> = (
+export const model: ProviderPackage.Definition<Settings, MistralChat.ProviderOptionsInput>["model"] = (
   modelID,
-  { accessToken, apiKey, baseURL, body, headers, location, project, ...providerOptions }: Settings = {},
+  { accessToken, apiKey, baseURL, body, headers, location, project, ...providerOptions },
 ) => {
   if (apiKey !== undefined)
     throw new ProviderConfigurationError({ provider: id, message: "Google Vertex Mistral does not support API keys" })

@@ -1,6 +1,6 @@
 import { expect } from "bun:test"
 import { Effect, Stream } from "effect"
-import { SpeechEvent } from "../../src/effect.js"
+import { SpeechEvent } from "../../src/index.js"
 
 export const TEXT = "Hello from OpenCode."
 

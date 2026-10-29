@@ -16,15 +16,20 @@ import {
   PTY_CONNECT_TOKEN_HEADER_VALUE,
 } from "@opencode/protocol/groups/pty"
 import { locationErrors, requestRef, response } from "../location"
+import { PtyEnvironment } from "../pty-environment"
 import { type Outbound, runPtySocket } from "./pty-socket"
 
-const notFound = (ptyID: Pty.ID) => new PtyNotFoundError({ ptyID, message: `PTY session not found: ${ptyID}` })
+const ticketScope = Effect.gen(function* () {
+  const location = yield* Location.Service
+  return { directory: location.directory as string, workspaceID: location.workspaceID }
+})
 
 export const PtyHandler = HttpApiBuilder.group(Api, "server.pty", (handlers) =>
   Effect.gen(function* () {
     const locations = yield* LocationServiceMap.Service
     const tickets = yield* PtyTicket.Service
     const cors = yield* CorsConfig
+    const environment = yield* PtyEnvironment.Service
 
     return handlers
       .handle(
@@ -39,10 +44,16 @@ export const PtyHandler = HttpApiBuilder.group(Api, "server.pty", (handlers) =>
         Effect.fn(function* (ctx) {
           const pty = yield* Pty.Service
           const location = yield* Location.Service
+          const cwd = ctx.payload.cwd || location.directory
           return yield* response(
             pty.create({
               ...ctx.payload,
-              cwd: ctx.payload.cwd || location.directory,
+              args: ctx.payload.args ? [...ctx.payload.args] : undefined,
+              cwd,
+              env: {
+                ...ctx.payload.env,
+                ...(yield* environment.get({ directory: location.directory, cwd })),
+              },
             }),
           )
         }),
@@ -52,7 +63,16 @@ export const PtyHandler = HttpApiBuilder.group(Api, "server.pty", (handlers) =>
         Effect.fn(function* (ctx) {
           const pty = yield* Pty.Service
           return yield* response(
-            pty.get(ctx.params.ptyID).pipe(Effect.catchTag("Pty.NotFoundError", () => notFound(ctx.params.ptyID))),
+            pty.get(ctx.params.ptyID).pipe(
+              Effect.catchTag(
+                "Pty.NotFoundError",
+                () =>
+                  new PtyNotFoundError({
+                    ptyID: ctx.params.ptyID,
+                    message: `PTY session not found: ${ctx.params.ptyID}`,
+                  }),
+              ),
+            ),
           )
         }),
       )
@@ -62,8 +82,20 @@ export const PtyHandler = HttpApiBuilder.group(Api, "server.pty", (handlers) =>
           const pty = yield* Pty.Service
           return yield* response(
             pty
-              .update(ctx.params.ptyID, ctx.payload)
-              .pipe(Effect.catchTag("Pty.NotFoundError", () => notFound(ctx.params.ptyID))),
+              .update(ctx.params.ptyID, {
+                ...ctx.payload,
+                size: ctx.payload.size ? { ...ctx.payload.size } : undefined,
+              })
+              .pipe(
+                Effect.catchTag(
+                  "Pty.NotFoundError",
+                  () =>
+                    new PtyNotFoundError({
+                      ptyID: ctx.params.ptyID,
+                      message: `PTY session not found: ${ctx.params.ptyID}`,
+                    }),
+                ),
+              ),
           )
         }),
       )
@@ -71,9 +103,16 @@ export const PtyHandler = HttpApiBuilder.group(Api, "server.pty", (handlers) =>
         "pty.remove",
         Effect.fn(function* (ctx) {
           const pty = yield* Pty.Service
-          yield* pty
-            .remove(ctx.params.ptyID)
-            .pipe(Effect.catchTag("Pty.NotFoundError", () => notFound(ctx.params.ptyID)))
+          yield* pty.remove(ctx.params.ptyID).pipe(
+            Effect.catchTag(
+              "Pty.NotFoundError",
+              () =>
+                new PtyNotFoundError({
+                  ptyID: ctx.params.ptyID,
+                  message: `PTY session not found: ${ctx.params.ptyID}`,
+                }),
+            ),
+          )
           return HttpApiSchema.NoContent.make()
         }),
       )
@@ -89,15 +128,17 @@ export const PtyHandler = HttpApiBuilder.group(Api, "server.pty", (handlers) =>
           )
             return yield* new ForbiddenError({ message: "Invalid PTY connect token request" })
           const pty = yield* Pty.Service
-          const location = yield* Location.Service
-          yield* pty.get(ctx.params.ptyID).pipe(Effect.catchTag("Pty.NotFoundError", () => notFound(ctx.params.ptyID)))
-          return yield* response(
-            tickets.issue({
-              ptyID: ctx.params.ptyID,
-              directory: location.directory,
-              workspaceID: location.workspaceID,
-            }),
+          yield* pty.get(ctx.params.ptyID).pipe(
+            Effect.catchTag(
+              "Pty.NotFoundError",
+              () =>
+                new PtyNotFoundError({
+                  ptyID: ctx.params.ptyID,
+                  message: `PTY session not found: ${ctx.params.ptyID}`,
+                }),
+            ),
           )
+          return yield* response(tickets.issue({ ptyID: ctx.params.ptyID, ...(yield* ticketScope) }))
         }),
       )
       .handleRaw(

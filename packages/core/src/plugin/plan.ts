@@ -1,6 +1,6 @@
 export * as PlanPlugin from "./plan.js"
 
-import { Message, ToolFailure } from "@opencode/ai/effect"
+import { Message, ToolFailure } from "@opencode/ai"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Agent } from "@opencode/schema/agent"
 import type { SessionEvent } from "@opencode/schema/session-event"
@@ -72,7 +72,11 @@ export const Plugin = define({
         )
     })
 
-    yield* ctx.event.subscribe({ types: ["session.created", "session.agent.selected"] }).pipe(
+    yield* ctx.event.subscribe().pipe(
+      Stream.filter(
+        (event): event is SessionEvent.Created | SessionEvent.AgentSelected =>
+          event.type === "session.created" || event.type === "session.agent.selected",
+      ),
       Stream.runForEach((event) => {
         const text = switchReminder(event, enterReminder)
         if (!text) return Effect.void

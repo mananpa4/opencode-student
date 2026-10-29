@@ -26,9 +26,10 @@ export const WorktreeHandler = HttpApiBuilder.group(Api, "server.worktree", (han
 
 function badRequest<A, R>(effect: Effect.Effect<A, Worktree.Error, R>) {
   return effect.pipe(
+    Effect.catchTag("Project.NotFoundError", missingProject),
     Effect.mapError((error) =>
-      error._tag === "Project.NotFoundError"
-        ? missingProject(error)
+      error instanceof ProjectNotFoundError
+        ? error
         : new WorktreeError({
             name: "WorktreeError",
             data: {
@@ -44,7 +45,9 @@ function badRequest<A, R>(effect: Effect.Effect<A, Worktree.Error, R>) {
 }
 
 function missingProject(error: Project.NotFoundError) {
-  return new ProjectNotFoundError({ projectID: error.projectID, message: `Project not found: ${error.projectID}` })
+  return Effect.fail(
+    new ProjectNotFoundError({ projectID: error.projectID, message: `Project not found: ${error.projectID}` }),
+  )
 }
 
 function message(error: Exclude<Worktree.Error, Project.NotFoundError>) {

@@ -19,6 +19,8 @@ export default Runtime.handler(
   Commands.commands.api,
   Effect.fn("cli.api")(function* (input) {
     const server = yield* ServerConnection.resolve({
+      server: Option.getOrUndefined(input.server),
+      standalone: input.standalone,
       mismatch: "ignore",
     })
     const endpoint = server.endpoint

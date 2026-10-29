@@ -1,34 +1,27 @@
-import { abort } from "@opencode/util/abort"
 import { getFilename } from "@opencode/util/path"
 import type { Project } from "@/runtime/server/types"
 import type { SessionInfo } from "@opencode/client/promise"
 import { useDialog } from "@opencode/ui/context/dialog"
-import { useQueryClient } from "@tanstack/solid-query"
 import { createMemo, onCleanup } from "solid-js"
-import { createStore } from "solid-js/store"
 import { commandPaletteOptions, useCommand, type CommandOption } from "@/shell/commands/command"
 import { useFile } from "@/workspaces/files/model"
-import { useGlobal, type ServerCtx } from "@/runtime/server/runtime"
+import { useGlobal } from "@/runtime/server/runtime"
 import { useLanguage } from "@/runtime/i18n/language"
 import type { LocalProject } from "@/shell/state/layout"
 import { ServerConnection } from "@/runtime/server/registry"
 import { useServerSDK } from "@/runtime/server/client"
 import { useTabs } from "@/shell/tabs/tabs"
 import { displayName } from "@opencode/ui/project-avatar"
-import { projectForSession } from "@/shell/layout/helpers"
-import { usePluginHost } from "@/runtime/plugin/host"
-import { usePluginAttachment } from "@/runtime/plugin/host-apis"
+import { resolveProjectForSession } from "@/shell/layout/helpers"
+import { useExtensionHost } from "@/runtime/extension/host"
+import { useExtensionAttachment } from "@/runtime/extension/host-apis"
 import { looksLikeSessionID } from "@/session/search"
-import { createSettingsPaletteEntries } from "@/settings/palette"
-import type { SettingsSearchResult } from "@/settings/search-results"
-import { matchesCommandPaletteEntry } from "./search"
 
 export type CommandPaletteEntry = {
   id: string
-  type: "command" | "file" | "session" | "setting"
+  type: "command" | "file" | "session"
   title: string
   description?: string
-  keywords?: string
   keybind?: string
   category: string
   option?: CommandOption
@@ -39,12 +32,11 @@ export type CommandPaletteEntry = {
   project?: LocalProject
   archived?: number
   updated?: number
-  setting?: SettingsSearchResult
 }
 
 const ENTRY_LIMIT = 5
 
-// The palette opens with these host commands. Featured plugin commands list before the view toggles.
+// The palette opens with these host commands. Featured extension commands list before the view toggles.
 const COMMON_COMMAND_IDS = ["session.new", "workspace.new", "session.previous", "session.next"] as const
 
 const COMMON_VIEW_COMMAND_IDS = ["review.toggle"] as const
@@ -71,11 +63,11 @@ export function createCommandPaletteFileEntry(path: string, category: string): C
 }
 
 export function createCommandPaletteFileOpener(onOpenFile?: (path: string) => void) {
-  const links = usePluginHost().links
-  const attachment = usePluginAttachment()
+  const links = useExtensionHost().links
+  const extensions = useExtensionAttachment()
 
   return (path: string) => {
-    links.open({ href: path, exact: true, background: true, session: attachment.current() })
+    links.open({ href: path, exact: true, background: true, session: extensions.current() })
     onOpenFile?.(path)
   }
 }
@@ -92,9 +84,8 @@ export function createCommandPaletteModel(props: { filesOnly?: () => boolean; on
   const serverSDK = useServerSDK()
   const serverCtx = global.ensureServerCtx(serverSDK.server)
   const appTabs = useTabs()
-  const attachment = usePluginAttachment()
+  const extensions = useExtensionAttachment()
   const openFile = createCommandPaletteFileOpener(props.onOpenFile)
-  const settings = createSettingsPaletteEntries()
   const state: PaletteHighlight = { cleanup: undefined, committed: false }
   const filesOnly = () => props.filesOnly?.() ?? false
 
@@ -129,8 +120,8 @@ export function createCommandPaletteModel(props: { filesOnly?: () => boolean; on
   })
 
   const recentFileEntries = createMemo(() => {
-    const all = attachment.files.opened()
-    const active = attachment.files.active()
+    const all = extensions.files.opened()
+    const active = extensions.files.active()
     const order = active ? [active, ...all.filter((path) => path !== active)] : all
     const category = language.t("palette.group.files")
 
@@ -151,10 +142,9 @@ export function createCommandPaletteModel(props: { filesOnly?: () => boolean; on
 
   const sessions = createServerSessionEntries({
     server: ServerConnection.key(serverSDK.server),
-    known: createKnownServerSessions(serverCtx),
-    projects: serverCtx.projects.list,
-    load: (search, signal) =>
-      serverSDK.api.session.list({ parentID: null, search, archived: false, limit: 50 }, { signal }),
+    opened: serverCtx.projects.list,
+    stored: () => serverCtx.sync.data.project,
+    load: (search, signal) => serverSDK.api.session.list({ parentID: null, search, limit: 50 }, { signal }),
     get: (sessionID, signal) => serverSDK.api.session.get({ sessionID }, { signal }),
     untitled: () => language.t("command.session.new"),
     category: () => language.t("command.category.session"),
@@ -185,7 +175,10 @@ export function createCommandPaletteModel(props: { filesOnly?: () => boolean; on
       if (!item.sessionID || !item.server) return
       const directory = item.project?.worktree ?? item.directory
 
-      if (directory) serverCtx.projects.touch(directory)
+      if (directory) {
+        serverCtx.projects.open(directory)
+        serverCtx.projects.touch(directory)
+      }
 
       const tab = appTabs.addSessionTab({
         server: item.server,
@@ -196,8 +189,6 @@ export function createCommandPaletteModel(props: { filesOnly?: () => boolean; on
 
       return
     }
-
-    if (item.type === "setting") return settings.select(item)
 
     if (!item.path) return
     openFile(item.path)
@@ -216,7 +207,6 @@ export function createCommandPaletteModel(props: { filesOnly?: () => boolean; on
     recentFileEntries,
     rootFileEntries,
     sessions,
-    settings,
     highlight,
     select,
     close: () => dialog.close(),
@@ -229,80 +219,32 @@ export function createCommandPaletteCommandEntry(option: CommandOption, category
     type: "command",
     title: option.title,
     description: option.description,
-    keywords: option.keywords,
     keybind: option.keybind,
     category,
     option,
   }
 }
 
-type SessionSearchState = {
-  abort?: AbortController
-}
-
 export function createServerSessionEntries(props: {
   server: ServerConnection.Key
-  known?: () => SessionInfo[]
-  /** Hides sessions deleted since they were loaded. */
-  apply?: (sessions: SessionInfo[]) => SessionInfo[]
-  projects: () => Project[]
+  opened: () => LocalProject[]
+  stored: () => Project[]
   load: (search: string, signal: AbortSignal) => Promise<{ data: SessionInfo[] }>
   get: (sessionID: string, signal: AbortSignal) => Promise<SessionInfo>
   untitled: () => string
   category: () => string
   recentCategory: () => string
-  recentLimit?: number
 }) {
-  const state: SessionSearchState = {}
-  const [store, setStore] = createStore<{ loaded: SessionInfo[] }>({ loaded: [] })
+  let abort: AbortController | undefined
 
-  // Let the newest metadata win duplicates before ranking the merged sessions newest-first.
-  const known = createMemo(() => {
-    const merged = [
-      ...new Map(
-        [...(props.known?.() ?? []), ...store.loaded]
-          .toSorted((a, b) => a.time.updated - b.time.updated)
-          .map((session) => [session.id, session] as const),
-      ).values(),
-    ].toSorted((a, b) => b.time.updated - a.time.updated)
+  onCleanup(() => abort?.abort())
 
-    return props.apply?.(merged) ?? merged
-  })
-
-  onCleanup(() => abort(state.abort))
-
-  const entries = (sessions: SessionInfo[], search: string): CommandPaletteEntry[] => {
-    const projects = props.projects()
-    const category = search ? props.category() : props.recentCategory()
-
-    return sessions.flatMap((session) => {
-      if (session.time.archived) return []
-
-      const project = projectForSession(session, projects)
-
-      return [
-        {
-          id: `session:${props.server}:${session.id}`,
-          type: "session" as const,
-          title: session.title || props.untitled(),
-          description: project ? displayName(project) : getFilename(session.location.directory),
-          category,
-          directory: session.location.directory,
-          sessionID: session.id,
-          server: props.server,
-          project,
-          updated: session.time.updated,
-        },
-      ]
-    })
-  }
-
-  const search = async (text: string): Promise<CommandPaletteEntry[]> => {
+  return async (text: string): Promise<CommandPaletteEntry[]> => {
     const search = text.trim()
 
-    abort(state.abort)
+    abort?.abort()
     const current = new AbortController()
-    state.abort = current
+    abort = current
 
     // Typed searches wait for a pause; an empty query lists recent sessions right away.
     await new Promise<void>((resolve) => {
@@ -318,11 +260,14 @@ export function createServerSessionEntries(props: {
     })
 
     if (current.signal.aborted) return []
+    const opened = props.opened()
+    const stored = props.stored().map((project) => ({ ...project, expanded: false }))
+    const category = search ? props.category() : props.recentCategory()
 
-    const [listed, exact] = await Promise.all([
+    const entries = await Promise.all([
       props.load(search, current.signal).then(
-        (result) => ({ items: result.data, failed: false }),
-        () => ({ items: [], failed: true }),
+        (result) => result.data,
+        () => [],
       ),
       looksLikeSessionID(search)
         ? props.get(search, current.signal).then(
@@ -330,49 +275,31 @@ export function createServerSessionEntries(props: {
             () => [],
           )
         : Promise.resolve([]),
-    ])
+    ]).then(([listed, exact]) =>
+      [...new Map([...exact, ...listed].map((session) => [session.id, session] as const)).values()].flatMap(
+        (session) => {
+          if (session.time.archived) return []
 
-    if (current.signal.aborted) return []
+          const project = resolveProjectForSession(session, opened, stored)
 
-    if (listed.failed && exact.length === 0) throw new Error("Session search failed")
-
-    const loaded = [...new Map([...exact, ...listed.items].map((session) => [session.id, session] as const)).values()]
-    // Keep names learned while this palette is open available to subsequent keystrokes.
-    setStore("loaded", (previous) => [
-      ...new Map([...previous, ...loaded].map((session) => [session.id, session] as const)).values(),
-    ])
-
-    // The local collection owns the recent rows, including newly loaded ones.
-    return search ? entries(loaded, search) : []
-  }
-
-  return Object.assign(search, {
-    search,
-    items(text: string) {
-      const search = text.trim()
-      const all = entries(known(), search)
-
-      if (!search) return all.slice(0, props.recentLimit ?? ENTRY_LIMIT)
-
-      return all.filter((entry) => matchesCommandPaletteEntry(entry, search)).slice(0, 50)
-    },
-  })
-}
-
-export function createKnownServerSessions(server: ServerCtx) {
-  const queryClient = useQueryClient()
-
-  return () => {
-    // Reuse the Home index already loaded before opening the palette; do not fetch an index for search.
-    const cached =
-      queryClient.getQueryData<SessionInfo[]>(["home-sessions", server.sdk.server]) ??
-      queryClient.getQueryData<SessionInfo[]>(["home-sessions", ServerConnection.key(server.sdk.server)]) ??
-      []
-
-    const merged = new Map([...cached, ...server.data.session.list()].map((session) => [session.id, session] as const))
-
-    return server.data.session.apply(
-      [...merged.values()].filter((session) => !session.parentID && !session.time.archived),
+          return [
+            {
+              id: `session:${props.server}:${session.id}`,
+              type: "session" as const,
+              title: session.title || props.untitled(),
+              description: project ? displayName(project) : getFilename(session.location.directory),
+              category,
+              directory: session.location.directory,
+              sessionID: session.id,
+              server: props.server,
+              project,
+              updated: session.time.updated,
+            },
+          ]
+        },
+      ),
     )
+
+    return search ? entries : entries.slice(0, ENTRY_LIMIT)
   }
 }

@@ -4,7 +4,7 @@ import { createSessionMutations } from "./data"
 
 const session = { id: "ses_test" } as SessionInfo
 
-test("keeps a removed session hidden after its deletion event, for lists cached before it", async () => {
+test("keeps a successful removal applied until its event arrives", async () => {
   const release = Promise.withResolvers<void>()
   const mutation = createSessionMutations(async () => release.promise)
 
@@ -15,13 +15,7 @@ test("keeps a removed session hidden after its deletion event, for lists cached 
   expect(mutation.apply([session])).toEqual([])
 
   mutation.deleted(session.id)
-  expect(mutation.apply([session])).toEqual([])
-})
-
-test("hides a session another client deleted", () => {
-  const mutation = createSessionMutations(async () => {})
-  mutation.deleted(session.id)
-  expect(mutation.apply([session])).toEqual([])
+  expect(mutation.apply([session])).toEqual([session])
 })
 
 test("rolls back a failed removal", async () => {

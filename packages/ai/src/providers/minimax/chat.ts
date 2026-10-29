@@ -3,9 +3,9 @@ import { MiniMax } from "../minimax.js"
 
 export type Settings = MiniMax.Settings<MiniMax.ChatOptionsInput>
 
-export const model: ProviderPackage.Model<Settings, MiniMax.ChatOptionsInput> = (
+export const model: ProviderPackage.Definition<Settings, MiniMax.ChatOptionsInput>["model"] = (
   modelID,
-  { apiKey, baseURL, body, headers, ...providerOptions }: Settings = {},
+  { apiKey, baseURL, body, headers, ...providerOptions },
 ) =>
   MiniMax.configure({
     apiKey,

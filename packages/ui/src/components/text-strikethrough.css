@@ -20,7 +20,7 @@
   pointer-events: none;
 }
 
-:root[data-motion="reduce"] {
+@media (prefers-reduced-motion: reduce) {
   [data-slot="text-strikethrough-line"] {
     clip-path: none !important;
   }

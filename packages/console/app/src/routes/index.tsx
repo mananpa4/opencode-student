@@ -187,7 +187,19 @@ export default function Home() {
               <li>
                 <span>[*]</span>
                 <div>
+                  <strong>{i18n.t("home.what.lsp.title")}</strong> {i18n.t("home.what.lsp.body")}
+                </div>
+              </li>
+              <li>
+                <span>[*]</span>
+                <div>
                   <strong>{i18n.t("home.what.multiSession.title")}</strong> {i18n.t("home.what.multiSession.body")}
+                </div>
+              </li>
+              <li>
+                <span>[*]</span>
+                <div>
+                  <strong>{i18n.t("home.what.shareLinks.title")}</strong> {i18n.t("home.what.shareLinks.body")}
                 </div>
               </li>
               <li>
@@ -215,7 +227,7 @@ export default function Home() {
                 </div>
               </li>
             </ul>
-            <a href="/v2/docs">
+            <a href={language.route("/docs")}>
               <span>{i18n.t("home.what.readDocs")} </span>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path
@@ -655,7 +667,7 @@ export default function Home() {
 
                 <p>
                   {i18n.t("home.privacy.body")} {i18n.t("home.privacy.learnMore")}{" "}
-                  <a href="/v2/docs/policies/">{i18n.t("home.privacy.link")}</a>.
+                  <a href={language.route("/docs/enterprise/")}>{i18n.t("home.privacy.link")}</a>.
                 </p>
               </div>
             </div>
@@ -671,7 +683,7 @@ export default function Home() {
               </li>
               <li>
                 <Faq question={i18n.t("home.faq.q2")}>
-                  {i18n.t("home.faq.a2.before")} <a href="/v2/docs">{i18n.t("home.faq.a2.link")}</a>.
+                  {i18n.t("home.faq.a2.before")} <a href={language.route("/docs")}>{i18n.t("home.faq.a2.link")}</a>.
                 </Faq>
               </li>
               <li>
@@ -679,7 +691,7 @@ export default function Home() {
                   {i18n.t("home.faq.a3.p1")} {i18n.t("home.faq.a3.p2.beforeZen")}{" "}
                   <A href={language.route("/zen")}>{i18n.t("nav.zen")}</A>
                   {i18n.t("home.faq.a3.p2.afterZen")} {i18n.t("home.faq.a3.p3")} {i18n.t("home.faq.a3.p4.beforeLocal")}{" "}
-                  <a href="/v2/docs/models/#local" target="_blank">
+                  <a href={language.route("/docs/providers/#lm-studio")} target="_blank">
                     {i18n.t("home.faq.a3.p4.localLink")}
                   </a>
                   .
@@ -688,14 +700,14 @@ export default function Home() {
               <li>
                 <Faq question={i18n.t("home.faq.q4")}>
                   {i18n.t("home.faq.a4.p1")}{" "}
-                  <a href="/v2/docs/providers/">{i18n.t("common.learnMore")}</a>.
+                  <a href={language.route("/docs/providers/#directory")}>{i18n.t("common.learnMore")}</a>.
                 </Faq>
               </li>
               <li>
                 <Faq question={i18n.t("home.faq.q5")}>
                   {i18n.t("home.faq.a5.beforeDesktop")}{" "}
                   <a href={language.route("/download")}>{i18n.t("home.faq.a5.desktop")}</a> {i18n.t("home.faq.a5.and")}{" "}
-                  <a href="/v2/docs/cli/web/">{i18n.t("home.faq.a5.web")}</a>!
+                  <a href={language.route("/docs/web")}>{i18n.t("home.faq.a5.web")}</a>!
                 </Faq>
               </li>
               <li>

@@ -4,13 +4,12 @@ import type {
   ComposerAgentPart,
   ComposerFilePart,
   ComposerSkillPart,
-  ComposerSessionPart,
   ComposerPersistedState,
   ComposerPrompt,
 } from "../types"
 import { isAttachment, promptLength } from "../prompt-parts"
 
-type ComposerStateStore = [
+export type ComposerStateStore = [
   Store<ComposerPersistedState> | Accessor<Store<ComposerPersistedState>>,
   SetStoreFunction<ComposerPersistedState>,
 ]
@@ -18,13 +17,11 @@ type ComposerStateStore = [
 export type ComposerStateStoreInput = ComposerStateStore | Accessor<ComposerStateStore>
 
 export function createComposerEditorActions(input: ComposerStateStoreInput) {
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- this typed union explicitly accepts either a store tuple or an accessor
   const tuple = () => (typeof input === "function" ? input() : input)
 
   const store = () => {
     const value = tuple()[0]
 
-    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- resolve the accessor branch of the typed store union
     return typeof value === "function" ? value() : value
   }
 
@@ -40,10 +37,7 @@ export function createComposerEditorActions(input: ComposerStateStoreInput) {
     },
     setPrompt(prompt: ComposerPrompt, cursor?: number) {
       // Persisted setters encode on every call, even inside a reactive batch.
-      const update: Partial<ComposerPersistedState> = { prompt, retry: undefined }
-
-      if (cursor !== undefined) update.cursor = cursor
-      batch(() => setStore()(update))
+      batch(() => setStore()({ prompt, ...(cursor !== undefined ? { cursor } : {}), retry: undefined }))
     },
     setCursor(cursor: number) {
       if (untrack(() => store().cursor) === cursor) return
@@ -56,7 +50,10 @@ export function createComposerEditorActions(input: ComposerStateStoreInput) {
     setText(content: string) {
       batch(() =>
         setStore()((state) => ({
-          prompt: [{ type: "text", content, start: 0, end: content.length }, ...state.prompt.filter(isAttachment)],
+          prompt: [
+            { type: "text", content, start: 0, end: content.length },
+            ...state.prompt.filter(isAttachment),
+          ],
           cursor: content.length,
           retry: undefined,
         })),
@@ -77,7 +74,7 @@ export function createComposerEditorActions(input: ComposerStateStoreInput) {
       clearRetry()
     },
     addMention(
-      mention: ComposerFilePart | ComposerAgentPart | ComposerSkillPart | ComposerSessionPart,
+      mention: ComposerFilePart | ComposerAgentPart | ComposerSkillPart,
       range?: { start: number; end: number },
     ) {
       const text = store()
@@ -130,7 +127,7 @@ function insertMention(
   prompt: ComposerPrompt,
   start: number,
   end: number,
-  mention: ComposerFilePart | ComposerAgentPart | ComposerSkillPart | ComposerSessionPart,
+  mention: ComposerFilePart | ComposerAgentPart | ComposerSkillPart,
 ): ComposerPrompt {
   if (start === 0 && end === 0) {
     return withOffsets([mention, { type: "text", content: " ", start: 0, end: 0 }, ...prompt])

@@ -1,7 +1,6 @@
 export * as SessionRecentText from "./recent-text.js"
 
 import type { SessionMessage } from "./message.js"
-import type { SessionStored } from "./stored.js"
 
 const TOOL_OUTPUT_MAX_CHARS = 1_250
 
@@ -13,7 +12,7 @@ export const kept = (message: SessionMessage.CompactionCompleted) =>
   typeof message.metadata?.recent === "string" ? message.metadata.recent : ""
 
 /** One message as the recent, verbatim part of a summary shows it. Empty for messages that part leaves out. */
-export const messageToText = (message: SessionMessage.Info | SessionStored.User): string => {
+export const messageToText = (message: SessionMessage.Info): string => {
   switch (message.type) {
     // Earlier summaries and instruction updates are handled outside the recent part.
     case "compaction":
@@ -40,9 +39,7 @@ export const messageToText = (message: SessionMessage.Info | SessionStored.User)
       return message.content
         .flatMap((part) => {
           if (part.type === "text") return [`[Assistant]: ${part.text}`]
-          // Providers return summaries of the real reasoning, and written out as text it can read like an attempt to
-          // extract the model's thinking.
-          if (part.type === "reasoning") return []
+          if (part.type === "reasoning") return part.text ? [`[Assistant reasoning]: ${part.text}`] : []
 
           const input = typeof part.state.input === "string" ? part.state.input : JSON.stringify(part.state.input)
           const call = `[Assistant tool call]: ${part.name}(${input})`

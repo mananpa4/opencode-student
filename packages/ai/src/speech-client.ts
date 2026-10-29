@@ -23,6 +23,7 @@ export const SpeechClient = {
       SpeechFinishEvent.make({
         audio: response.audio,
         usage: response.usage,
+        notices: response.notices,
         providerMetadata: response.providerMetadata,
       }),
     ],

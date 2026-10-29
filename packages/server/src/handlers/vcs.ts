@@ -93,11 +93,7 @@ export const VcsHandler = HttpApiBuilder.group(Api, "server.vcs", (handlers) =>
           Effect.gen(function* () {
             const vcs = yield* Vcs.Service
             return yield* vcs
-              .diff(ctx.query.mode, {
-                context: ctx.query.context,
-                base: ctx.query.base,
-                untracked: ctx.query.untracked,
-              })
+              .diff(ctx.query.mode, { context: ctx.query.context, base: ctx.query.base })
               .pipe(Effect.mapError((error) => new ServiceUnavailableError({ service: "vcs", message: error.message })))
           }),
         ),

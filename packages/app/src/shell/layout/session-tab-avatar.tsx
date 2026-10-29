@@ -3,7 +3,6 @@ import type { ServerConnection } from "@/runtime/server/registry"
 import { useSessionTabAvatarState } from "@/shell/layout/project-avatar-state"
 import {
   displayName,
-  getProjectAvatarGenerated,
   getProjectAvatarSource,
   getProjectAvatarVariant,
   ProjectAvatar,
@@ -37,7 +36,7 @@ export function SessionTabAvatarView(props: {
   project?: LocalProject
   directory: string
   unread: boolean
-  loading?: boolean
+  loading: boolean
 }) {
   return (
     <Show
@@ -47,7 +46,6 @@ export function SessionTabAvatarView(props: {
           fallback={displayName(props.project ?? { worktree: props.directory })}
           src={getProjectAvatarSource(props.project?.id, props.project?.icon)}
           variant={getProjectAvatarVariant(props.project?.icon?.color)}
-          generated={getProjectAvatarGenerated(props.project ?? { worktree: props.directory })}
           unread={props.unread}
         />
       }

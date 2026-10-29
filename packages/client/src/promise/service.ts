@@ -7,7 +7,7 @@ import { PtyHandoff } from "../pty-handoff.js"
 import { decide, fallback, headers, probeResult, same } from "../service-probe.js"
 
 export * from "../service.js"
-export { fallback, headers }
+export { headers }
 
 // Find, start, and stop the local opencode background service.
 //

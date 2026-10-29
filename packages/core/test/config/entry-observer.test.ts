@@ -5,7 +5,6 @@ import { Event } from "@opencode/schema/event"
 import { Deferred, Effect, PubSub, Ref, Stream } from "effect"
 import { ConfigEntryObserver } from "../../src/config/plugin/entry-observer"
 import { it } from "../lib/effect"
-import { host } from "../plugin/host"
 
 describe("ConfigEntryObserver", () => {
   it.effect("closes the startup race and reloads later updates", () =>
@@ -17,12 +16,10 @@ describe("ConfigEntryObserver", () => {
         entries: () => Ref.get(current),
         changes: () => Stream.empty,
       })
-      const event = host({
-        event: {
-          subscribe: () =>
-            Stream.unwrap(Ref.set(current, [document("raced")]).pipe(Effect.as(Stream.fromPubSub(updates)))),
-        },
-      }).event
+      const event = {
+        subscribe: () =>
+          Stream.unwrap(Ref.set(current, [document("raced")]).pipe(Effect.as(Stream.fromPubSub(updates)))),
+      }
 
       const loaded = yield* ConfigEntryObserver.observe(
         config,

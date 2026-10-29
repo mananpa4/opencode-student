@@ -6,7 +6,6 @@ import type { Session } from "@opencode/schema/session"
 import { Tool } from "@opencode/schema/tool"
 import { Deferred, Effect, Schema, Stream } from "effect"
 import { Browser } from "./rpc.js"
-import { BrowserSkill } from "./skill.js"
 import { BrowserTunnel } from "./tunnel.js"
 
 type Attachment = {
@@ -23,28 +22,18 @@ export const make = Effect.fn("BrowserConnection.make")(function* (
   ctx: Pick<Context, "agent" | "rpc" | "session" | "location" | "event">,
 ) {
   const browsers = new Map<Session.ID, Attachment>()
-  // The browser tools and their skill, which an attachment allows together.
-  const access = [
-    { action: "browser", resource: "*" },
-    { action: "skill", resource: BrowserSkill.id },
-  ] as const
   // Appended after config, so every agent hides the browser until an attachment allows it.
   yield* ctx.agent.transform((editor) =>
-    editor
-      .list()
-      .forEach((agent) => agent.permissions.push(...access.map((rule) => ({ ...rule, effect: "deny" as const })))),
+    editor.list().forEach((agent) => agent.permissions.push({ action: "browser", resource: "*", effect: "deny" })),
   )
-  // Each attachment adds and removes its own allows, so a replaced attachment keeps the new one's.
+  // Each attachment adds and removes its own allow, so a replaced attachment keeps the new one's.
   const grant = (sessionID: Session.ID) =>
     Effect.acquireRelease(
       ctx.session.get({ sessionID }).pipe(
         Effect.flatMap((session) =>
           ctx.session.update({
             sessionID,
-            permissions: [
-              ...(session.permissions ?? []),
-              ...access.map((rule) => ({ ...rule, effect: "allow" as const })),
-            ],
+            permissions: [...(session.permissions ?? []), { action: "browser", resource: "*", effect: "allow" }],
           }),
         ),
         Effect.orDie,
@@ -52,15 +41,12 @@ export const make = Effect.fn("BrowserConnection.make")(function* (
       () =>
         ctx.session.get({ sessionID }).pipe(
           Effect.flatMap((session) => {
-            const current = session.permissions ?? []
-            const permissions = access.reduce((rules, allow) => {
-              const index = rules.findIndex(
-                (rule) => rule.action === allow.action && rule.resource === allow.resource && rule.effect === "allow",
-              )
-              return index === -1 ? rules : rules.toSpliced(index, 1)
-            }, current)
-            if (permissions.length === current.length) return Effect.void
-            return ctx.session.update({ sessionID, permissions })
+            const permissions = session.permissions ?? []
+            const index = permissions.findIndex(
+              (rule) => rule.action === "browser" && rule.resource === "*" && rule.effect === "allow",
+            )
+            if (index === -1) return Effect.void
+            return ctx.session.update({ sessionID, permissions: permissions.toSpliced(index, 1) })
           }),
           Effect.ignore,
         ),
@@ -170,7 +156,8 @@ export const make = Effect.fn("BrowserConnection.make")(function* (
         ),
     })
     .pipe(Effect.orDie)
-  yield* ctx.event.subscribe({ types: ["session.deleted", "session.moved"] }).pipe(
+  yield* ctx.event.subscribe().pipe(
+    Stream.filter((event) => event.type === "session.deleted" || event.type === "session.moved"),
     Stream.runForEach((event) => close(event.data.sessionID)),
     Effect.forkScoped({ startImmediately: true }),
   )

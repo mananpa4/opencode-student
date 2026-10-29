@@ -1,5 +1,4 @@
 import { Schema } from "effect"
-import { NonNegativeInt } from "@opencode/schema"
 import { Tool } from "@opencode/schema/tool"
 import { ModelID, ProviderID, RouteID } from "./ids.js"
 
@@ -13,7 +12,7 @@ export class HttpContext extends Schema.Class<HttpContext>("AI.HttpContext")({
 }) {}
 
 export class HttpRateLimitDetails extends Schema.Class<HttpRateLimitDetails>("AI.HttpRateLimitDetails")({
-  retryAfterMs: Schema.optional(NonNegativeInt),
+  retryAfterMs: Schema.optional(Schema.Number),
   limit: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   remaining: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   reset: Schema.optional(Schema.Record(Schema.String, Schema.String)),
@@ -78,7 +77,7 @@ export class AuthenticationError extends Schema.TaggedError<AuthenticationError>
 
 export class RateLimitError extends Schema.TaggedError<RateLimitError>("AI.Error.RateLimit")("RateLimit", {
   ...ReasonFields,
-  retryAfterMs: Schema.optional(NonNegativeInt),
+  retryAfterMs: Schema.optional(Schema.Number),
   rateLimit: Schema.optional(HttpRateLimitDetails),
 }) {}
 
@@ -86,7 +85,7 @@ export class QuotaExceededError extends Schema.TaggedError<QuotaExceededError>("
   "QuotaExceeded",
   {
     ...ReasonFields,
-    retryAfterMs: Schema.optional(NonNegativeInt),
+    retryAfterMs: Schema.optional(Schema.Number),
   },
 ) {}
 
@@ -99,7 +98,7 @@ export class ProviderInternalError extends Schema.TaggedError<ProviderInternalEr
   "ProviderInternal",
   {
     ...ReasonFields,
-    retryAfterMs: Schema.optional(NonNegativeInt),
+    retryAfterMs: Schema.optional(Schema.Number),
   },
 ) {}
 
@@ -140,7 +139,7 @@ export class UnknownProviderError extends Schema.TaggedError<UnknownProviderErro
 /** A caller-supplied deadline elapsed, such as `Generation.await` polling past its `Poll.timeout`. */
 export class TimeoutError extends Schema.TaggedError<TimeoutError>("AI.Error.Timeout")("Timeout", {
   ...ReasonFields,
-  timeoutMs: Schema.optional(NonNegativeInt),
+  timeoutMs: Schema.optional(Schema.Number),
 }) {}
 
 export const AIErrorReason = Schema.Union([

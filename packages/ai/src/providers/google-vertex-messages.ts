@@ -104,9 +104,9 @@ export const provider = {
   configure,
 }
 
-export const model: ProviderPackage.Model<Settings, AnthropicMessages.ProviderOptionsInput> = (
+export const model: ProviderPackage.Definition<Settings, AnthropicMessages.ProviderOptionsInput>["model"] = (
   modelID,
-  { accessToken, apiKey, baseURL, body, headers, location, project, ...providerOptions }: Settings = {},
+  { accessToken, apiKey, baseURL, body, headers, location, project, ...providerOptions },
 ) => {
   if (apiKey !== undefined)
     throw new ProviderConfigurationError({ provider: id, message: "Google Vertex Messages does not support API keys" })

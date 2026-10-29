@@ -1,3 +1,4 @@
+import { Cause, Effect, Exit } from "effect"
 import type { Interpreter } from "./interpreter.js"
 import { primitivePrototype } from "./intrinsics.js"
 import { GeneratorReturn, typeError } from "./model.js"
@@ -10,27 +11,25 @@ import {
   coerceToNumber,
   coerceToString,
   type Cursor,
-  type NativeResult,
   type Value,
 } from "./objects.js"
 import { isOpaque, typeofValue } from "./references.js"
-import { type Eval, Interruption, isEval } from "./runner.js"
 
 /** IteratorClose: a consumer failure closes the iterator and wins over any close failure, except that a generator's
  * return() is a return completion, so a failing close wins over it, as after `break`. */
-export function* preserveConsumerError<A>(close: Cursor["close"], body: Eval<A>): Eval<A> {
-  try {
-    return yield* body
-  } catch (error) {
-    if (error instanceof Interruption) throw error
-    try {
-      yield* close()
-    } catch (closed) {
-      if (error instanceof GeneratorReturn) throw closed
-    }
-    throw error
-  }
-}
+export const preserveConsumerError = <A, R>(
+  close: Cursor<R>["close"],
+  effect: Effect.Effect<A, unknown, R>,
+): Effect.Effect<A, unknown, R> =>
+  Effect.flatMap(Effect.exit(effect), (exit) => {
+    if (Exit.isSuccess(exit)) return Effect.succeed(exit.value)
+    return Effect.flatMap(Effect.exit(close), (closed) => {
+      if (!Exit.isSuccess(closed) && Cause.squash(exit.cause) instanceof GeneratorReturn) {
+        return Effect.failCause(closed.cause)
+      }
+      return Effect.failCause(exit.cause)
+    })
+  })
 
 export type Hint = "number" | "string" | "default"
 
@@ -39,16 +38,19 @@ export type Hint = "number" | "string" | "default"
  * default hint as "string", like their `Symbol.toPrimitive`. Opaque values (functions, promises, generators, tool
  * references) pass through unchanged so callers reject or describe them in their built-in form.
  */
-export function* toPrimitive<R>(ctx: Interpreter<R>, value: Value, hint: Hint): Eval<Value> {
-  if (!(value instanceof Obj) || isOpaque(value)) return value
+export const toPrimitive = <R>(ctx: Interpreter<R>, value: Value, hint: Hint): Effect.Effect<Value, unknown, R> => {
+  if (!(value instanceof Obj) || isOpaque(value)) return Effect.succeed(value)
   const asString = hint === "string" || (hint === "default" && value instanceof DateObj)
-  for (const method of asString ? ["toString", "valueOf"] : ["valueOf", "toString"]) {
-    const callable = get(value, method)
-    if (!(callable instanceof Callable)) continue
-    const result = yield* ctx.call(callable, value, [])
-    if (result === null || (typeof result !== "object" && typeof result !== "function")) return result
-  }
-  throw typeError("Cannot convert object to primitive value.")
+  const order = asString ? ["toString", "valueOf"] : ["valueOf", "toString"]
+  return Effect.gen(function* () {
+    for (const method of order) {
+      const callable = get(value, method)
+      if (!(callable instanceof Callable)) continue
+      const result = yield* ctx.call(callable, value, [])
+      if (result === null || (typeof result !== "object" && typeof result !== "function")) return result
+    }
+    throw typeError("Cannot convert object to primitive value.")
+  })
 }
 
 /** Invoke(value, name): calls the method the value would find through its prototype. */
@@ -58,33 +60,32 @@ export const invoke = <R>(ctx: Interpreter<R>, value: Value, name: string, label
   return ctx.call(get(target, name), value, [])
 }
 
-export function* toPrimitiveString<R>(ctx: Interpreter<R>, value: Value): Eval<string> {
-  return coerceToString(yield* toPrimitive(ctx, value, "string"))
-}
+export const toPrimitiveString = <R>(ctx: Interpreter<R>, value: Value) =>
+  Effect.map(toPrimitive(ctx, value, "string"), coerceToString)
 
-export function* toPrimitiveNumber<R>(ctx: Interpreter<R>, value: Value): Eval<number> {
-  return coerceToNumber(yield* toPrimitive(ctx, value, "number"))
-}
+export const toPrimitiveNumber = <R>(ctx: Interpreter<R>, value: Value) =>
+  Effect.map(toPrimitive(ctx, value, "number"), coerceToNumber)
 
 /**
  * Runs a native body on its arguments after ToPrimitive, in order, with one hint for all positions or one per
- * position. Primitive arguments skip the conversion entirely.
+ * position. Primitive arguments skip the Effect entirely.
  */
 export const withPrimitives = <R>(
   ctx: Interpreter<R>,
   hints: Hint | ReadonlyArray<Hint>,
   values: Array<Value>,
-  body: (primitives: Array<Value>) => NativeResult,
-): NativeResult => {
+  body: (primitives: Array<Value>) => Value | Effect.Effect<Value, unknown, R>,
+): Value | Effect.Effect<Value, unknown, R> => {
   if (!values.some((value) => value instanceof Obj)) return body(values)
-  return (function* () {
-    const primitives: Array<Value> = []
-    for (const [index, value] of values.entries()) {
-      primitives.push(yield* toPrimitive(ctx, value, typeof hints === "string" ? hints : hints[index]!))
-    }
-    const result = body(primitives)
-    return isEval(result) ? yield* result : result
-  })()
+  return Effect.flatMap(
+    Effect.forEach(values, (value, index) =>
+      toPrimitive(ctx, value, typeof hints === "string" ? hints : hints[index]!),
+    ),
+    (primitives) => {
+      const result = body(primitives)
+      return Effect.isEffect(result) ? result : Effect.succeed(result)
+    },
+  )
 }
 
 // The single acceptance list for callbacks: collections, sort, string replacers,
@@ -98,7 +99,7 @@ export const applyCollectionCallback = <R>(
   ctx: Interpreter<R>,
   callback: Value,
   name: string,
-): ((args: Array<Value>, thisValue?: Value) => Eval<Value>) => {
+): ((args: Array<Value>, thisValue?: Value) => Effect.Effect<Value, unknown, R>) => {
   if (!isSupportedCallback(callback)) {
     if (typeofValue(callback) === "function") {
       throw typeError(

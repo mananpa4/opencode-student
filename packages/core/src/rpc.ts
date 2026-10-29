@@ -59,7 +59,7 @@ const layer = Layer.effect(
       const events = new Map(
         Object.entries(definition.events).map(([name, event]) => [
           name,
-          { event, definition: eventDefinition(eventType(definition, name)) },
+          { event, definition: eventDefinition(definition, name) },
         ]),
       )
       definitions.set(definition, events)
@@ -97,7 +97,7 @@ const layer = Layer.effect(
             const data = (yield* encode(event.schema, args[1])) as Readonly<Record<string, unknown>>
             return yield* bus
               .publish(registered.definition, data, {
-                location: ref,
+                location: Location.Ref.make({ directory: ref.directory, workspaceID: ref.workspaceID }),
               })
               .pipe(Effect.asVoid)
           }),
@@ -192,7 +192,8 @@ function eventType<const D extends Rpc.Definition, const Name extends keyof D["e
   return `rpc.${definition.id}.${name}`
 }
 
-export function eventDefinition(type: `rpc.${string}`): Event.Definition {
+function eventDefinition(definition: Rpc.Definition, name: string): Event.Definition {
+  const type = eventType(definition, name)
   const data = EventData
   return Schema.Struct({ ...fields, type: Schema.Literal(type), data }).pipe(
     statics(() => ({ type, durability: "ephemeral" as const, durable: undefined, data })),
@@ -283,6 +284,6 @@ const logicalEvent = Effect.fn("Rpc.logicalEvent")(function* <
     ...payload,
     type: eventType(definition, name),
     data,
-    location: ref,
+    location: Location.Ref.make({ directory: ref.directory, workspaceID: ref.workspaceID }),
   } as Rpc.EventPayload<D, Name>
 })

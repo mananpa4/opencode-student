@@ -25,7 +25,7 @@
   }
 }
 
-:root[data-motion="reduce"] {
+@media (prefers-reduced-motion: reduce) {
   [data-component="loader-v2"] {
     animation: none;
   }

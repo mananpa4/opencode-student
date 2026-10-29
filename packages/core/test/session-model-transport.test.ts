@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { AIError, HttpContext, InvalidRequestError, TransportError } from "@opencode/ai/effect"
+import { AIError, HttpContext, InvalidRequestError, TransportError } from "@opencode/ai"
 import type {
   ChannelObservation,
   WebSocketChannelExchange,

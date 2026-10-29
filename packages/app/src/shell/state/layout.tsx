@@ -11,20 +11,10 @@ import { Persist, persisted, removePersisted } from "@/runtime/persistence/stora
 import { Persistence } from "@/runtime/persistence/schema"
 import { TabStorage } from "@/shell/tabs/schema"
 import { createScrollPersistence, type SessionScroll } from "./scroll"
-import type { ClosedSideTab } from "@/runtime/plugin/closed-tabs"
 import { SessionStateKey } from "@/runtime/server/scope"
 import { createSessionKeyReader, ensureSessionKey, pruneSessionKeys } from "./helpers"
 import { requireServerKey } from "@/shell/routes/session"
-import {
-  closeSessionTab,
-  moveSessionTab,
-  openSessionTab,
-  placeSessionTabs,
-  previewSessionTab,
-  type SessionPane,
-  type SessionTabs,
-  type SessionTabState,
-} from "./session-tabs"
+import { closeSessionTab, openSessionTab, previewSessionTab } from "./session-tabs"
 
 const DEFAULT_SIDEBAR_WIDTH = 344
 
@@ -34,30 +24,25 @@ const DEFAULT_SESSION_WIDTH = 600
 
 const DEFAULT_DOCK_HEIGHT = 280
 
-const PANE_TARGET_TTL_MS = 10_000
-
-export type LocalProject = Partial<Project> & { worktree: string }
+export type LocalProject = Partial<Project> & { worktree: string; expanded: boolean }
 
 export type HomeProjectSelection = typeof layoutSchema.Type.home.selection
 
 export type TabRegions = {
+  dockOpened: Accessor<boolean>
+  setDockOpened(opened: boolean): void
+  dockHeight: Accessor<number | undefined>
+  setDockHeight(height: number): void
   sideOpened: Accessor<boolean>
   setSideOpened(opened: boolean): void
-  bottomOpened: Accessor<boolean>
-  setBottomOpened(opened: boolean): void
   sessionWidth: Accessor<number | undefined>
   setSessionWidth(width: number): void
-  bottomHeight: Accessor<number | undefined>
-  setBottomHeight(height: number): void
-  splitRatio: Accessor<number | undefined>
-  setSplitRatio(ratio: number): void
 }
 
 export type LayoutRoute =
   | { type: "home" }
   | { type: "settings" }
   | { type: "connect" }
-  | { type: "components" }
   | { type: "draft"; draftID: string }
   | { type: "session"; sessionId: string; server: ServerConnection.Key }
 
@@ -69,8 +54,6 @@ export const currentRoute = (pathname: string, search: string): LayoutRoute => {
   if (parts[0] === "settings") return { type: "settings" }
 
   if (parts[0] === "connect") return { type: "connect" }
-
-  if (parts[0] === "components") return { type: "components" }
 
   if (parts[0] === "new-session") {
     const draftID = new URLSearchParams(search).get("draftId")
@@ -100,31 +83,11 @@ export const useCurrentRoute = () => {
 const sessionTabsSchema = Persistence.struct({
   all: Persistence.array(Schema.String),
   active: Persistence.optional(Schema.String),
-  panes: Persistence.optional(Persistence.record(Schema.Literals(["split", "bottom"]))),
-  selected: Persistence.optional(
-    Persistence.struct({
-      side: Persistence.optional(Schema.String),
-      split: Persistence.optional(Schema.String),
-      bottom: Persistence.optional(Schema.String),
-    }),
-  ),
-})
-
-const closedTabSchema = Schema.Struct({
-  key: Schema.String,
-  title: Schema.String,
-  icon: Schema.optional(Schema.String),
-  file: Schema.optional(Schema.String),
-  detail: Schema.optional(Schema.String),
-  data: Schema.optional(Schema.String),
-  closed: Schema.Finite,
 })
 
 const sessionViewSchema = Persistence.struct({
   scroll: Persistence.record(Schema.Struct({ x: Schema.Finite, y: Schema.Finite })),
-  // Side tabs the user closed, newest first, for the new tab view's "Recently closed".
-  closed: Persistence.optional(Persistence.array(closedTabSchema)),
-  // Review state from before plugins. A plugin copies each session's entry out once; nothing writes these
+  // Review state from before extensions. An extension copies each session's entry out once; nothing writes these
   // any more, and they stay so layout rewrites cannot drop a session's entry before it is copied.
   reviewOpen: Schema.optional(Persistence.array(Schema.String)),
   reviewMode: Schema.optional(Schema.Literals(["git", "branch", "turn"])),
@@ -144,13 +107,13 @@ export const layoutSchema = Persistence.struct({
   terminal: Persistence.struct({ height: Schema.Finite, opened: Schema.Boolean }),
   review: Persistence.struct({
     panelOpened: Schema.Boolean,
-    // Owned by the review plugin, which copies it out once; kept so layout rewrites cannot drop it first.
+    // Owned by the review extension, which copies it out once; kept so layout rewrites cannot drop it first.
     diffStyle: Schema.optional(Schema.Literals(["unified", "split"])),
   }),
   fileTree: Persistence.struct({
     opened: Schema.Boolean,
     width: Schema.Finite,
-    // The file plugin owns the tree's tab now. The stored field stays so the migration below
+    // The file extension owns the tree's tab now. The stored field stays so the migration below
     // keeps telling current layouts from ones saved before the tab existed.
     tab: Schema.Literals(["changes", "all"]),
   }),
@@ -208,7 +171,7 @@ export const layoutPersistence = Persistence.migrate(
         sessionTabs: Object.fromEntries(
           Object.entries(value.sessionTabs)
             .filter(([key]) => SessionStateKey.is(key))
-            .map(([key, tabs]) => [key, { ...tabs, all: [...new Set(tabs.all)] }]),
+            .map(([key, tabs]) => [key, { all: [...new Set(tabs.all)], active: tabs.active }]),
         ),
         sessionView: Object.fromEntries(Object.entries(value.sessionView).filter(([key]) => SessionStateKey.is(key))),
       })),
@@ -247,63 +210,14 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       initialLayout(servers.list[0] ? ServerConnection.key(servers.list[0]) : undefined),
     )
 
-    const [ephemeral, setEphemeral] = createStore<{
-      sessionTabPreview: Record<string, string | undefined>
-      // The pane a pane's "+" menu asked the next new tab to open in.
-      sessionTabTarget: Record<string, { pane: SessionPane; at: number } | undefined>
-    }>({
+    const [ephemeral, setEphemeral] = createStore<{ sessionTabPreview: Record<string, string | undefined> }>({
       sessionTabPreview: {},
-      sessionTabTarget: {},
     })
-
-    /** Writes a session's strip and selection, carrying pane placement over from the stored strip. */
-    const writeTabs = (session: string, next: SessionTabs, preview?: { value: string | undefined }) =>
-      untrack(() => {
-        const previous = store.sessionTabs[session] ?? { all: [] }
-        const target = ephemeral.sessionTabTarget[session]
-        const pending = target && Date.now() - target.at < PANE_TARGET_TTL_MS ? target.pane : undefined
-        const placed = placeSessionTabs(previous, next, pending)
-
-        batch(() => {
-          setStore("sessionTabs", session, {
-            all: placed.all,
-            active: placed.active,
-            panes: placed.panes,
-            selected: placed.selected,
-          })
-
-          if (preview) setEphemeral("sessionTabPreview", session, preview.value)
-
-          // A tab that opens again leaves "Recently closed".
-          const closed = store.sessionView[session]?.closed
-
-          if (closed?.some((entry) => placed.all.includes(entry.key)))
-            setStore(
-              "sessionView",
-              session,
-              "closed",
-              closed.filter((entry) => !placed.all.includes(entry.key)),
-            )
-
-          if (target && placed.all.some((tab) => !previous.all.includes(tab)))
-            setEphemeral("sessionTabTarget", session, undefined)
-        })
-      })
-
-    const tabState = (session: string): SessionTabState => ({
-      tabs: store.sessionTabs[session] ?? { all: [] },
-      preview: ephemeral.sessionTabPreview[session],
-    })
-
-    const applyTabs = (session: string, next: SessionTabState) => writeTabs(session, next.tabs, { value: next.preview })
 
     // Opening Home with its shortcut focuses session search, so typing filters immediately.
     let homeSearchFocus = false
 
-    // Search projects outside a draft opens a new draft, which then opens its project picker.
-    let draftProjectSearch = false
-
-    // Names of other session-scoped stores, e.g. plugin storage, so pruning drops them with the layout state.
+    // Names of other session-scoped stores, e.g. extension storage, so pruning drops them with the layout state.
     const [scoped, setScoped, , scopedReady] = persisted(
       Persist.global("layout.scoped"),
       Persistence.array(Schema.String),
@@ -456,19 +370,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           },
         },
       },
-      draft: {
-        projectSearch: {
-          request() {
-            draftProjectSearch = true
-          },
-          take() {
-            const requested = draftProjectSearch
-            draftProjectSearch = false
-
-            return requested
-          },
-        },
-      },
       sessionState: {
         /** Records a session-scoped store, so pruning a session's layout state drops it too. */
         track(name: string) {
@@ -478,6 +379,46 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             if (scopedReady()) return add()
             void scopedReady.promise?.then(add)
           })
+        },
+      },
+      fileTree: {
+        opened: createMemo(() => store.fileTree?.opened ?? true),
+        width: createMemo(() => store.fileTree?.width ?? DEFAULT_FILE_TREE_WIDTH),
+        open() {
+          if (!store.fileTree) {
+            setStore("fileTree", { opened: true, width: DEFAULT_FILE_TREE_WIDTH, tab: "changes" })
+
+            return
+          }
+
+          setStore("fileTree", "opened", true)
+        },
+        close() {
+          if (!store.fileTree) {
+            setStore("fileTree", { opened: false, width: DEFAULT_FILE_TREE_WIDTH, tab: "changes" })
+
+            return
+          }
+
+          setStore("fileTree", "opened", false)
+        },
+        toggle() {
+          if (!store.fileTree) {
+            setStore("fileTree", { opened: true, width: DEFAULT_FILE_TREE_WIDTH, tab: "changes" })
+
+            return
+          }
+
+          setStore("fileTree", "opened", (x) => !x)
+        },
+        resize(width: number) {
+          if (!store.fileTree) {
+            setStore("fileTree", { opened: true, width, tab: "changes" })
+
+            return
+          }
+
+          setStore("fileTree", "width", width)
         },
       },
       session: {
@@ -548,7 +489,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           return message
         },
       },
-      /** The side region of a shell tab, and the session panel width beside it. */
+      /** The dock and side regions of a shell tab, and the session panel width beside them. */
       view(sessionKey: string | Accessor<string>, regions: TabRegions) {
         const key = createSessionKeyReader(sessionKey, ensureKey)
 
@@ -559,28 +500,25 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           setScroll(tab: string, pos: SessionScroll) {
             scroll.setScroll(key(), tab, pos)
           },
+          dock: {
+            opened: regions.dockOpened,
+            height: createMemo(() => regions.dockHeight() ?? DEFAULT_DOCK_HEIGHT),
+            resize: regions.setDockHeight,
+            open() {
+              regions.setDockOpened(true)
+            },
+            close() {
+              regions.setDockOpened(false)
+            },
+          },
           side: {
             opened: regions.sideOpened,
             toggle() {
               regions.setSideOpened(!regions.sideOpened())
             },
           },
-          /** The pane under the session and the side region, shown while it holds tabs and the user has not hidden it. */
-          bottom: {
-            opened: regions.bottomOpened,
-            setOpened: regions.setBottomOpened,
-            height: createMemo(() => regions.bottomHeight() ?? DEFAULT_DOCK_HEIGHT),
-            resize: regions.setBottomHeight,
-          },
-          /** The share of the side region's height the side pane takes while a pane is split below it. */
-          split: {
-            ratio: createMemo(() => regions.splitRatio() ?? 0.5),
-            resize: regions.setSplitRatio,
-          },
           session: {
             width: createMemo(() => regions.sessionWidth() ?? DEFAULT_SESSION_WIDTH),
-            /** The user has dragged the divider, so the width is theirs rather than the default. */
-            resized: createMemo(() => regions.sessionWidth() !== undefined),
             resize: regions.setSessionWidth,
           },
         }
@@ -591,47 +529,71 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           return store.sessionTabs[session] ?? { all: [] }
         },
         open(session: string, tab: string, launchers?: ReadonlySet<string>, first?: boolean) {
-          applyTabs(session, openSessionTab(tabState(session), tab, launchers, first))
+          const next = openSessionTab(
+            { tabs: store.sessionTabs[session] ?? { all: [] }, preview: ephemeral.sessionTabPreview[session] },
+            tab,
+            launchers,
+            first,
+          )
+
+          batch(() => {
+            setStore("sessionTabs", session, next.tabs)
+            setEphemeral("sessionTabPreview", session, next.preview)
+          })
         },
         preview(session: string, tab: string, launchers?: ReadonlySet<string>) {
-          applyTabs(session, previewSessionTab(tabState(session), tab, launchers))
+          const next = previewSessionTab(
+            { tabs: store.sessionTabs[session] ?? { all: [] }, preview: ephemeral.sessionTabPreview[session] },
+            tab,
+            launchers,
+          )
+
+          batch(() => {
+            setStore("sessionTabs", session, next.tabs)
+            setEphemeral("sessionTabPreview", session, next.preview)
+          })
         },
         /** Adds a tab at the end of the strip without selecting it or touching the preview. */
         append(session: string, tab: string) {
-          const current = store.sessionTabs[session] ?? { all: [] }
+          const current = store.sessionTabs[session]
+
+          if (!current) return setStore("sessionTabs", session, { all: [tab] })
 
           if (current.all.includes(tab)) return
-          writeTabs(session, { ...current, all: [...current.all, tab] })
+          setStore("sessionTabs", session, "all", current.all.length, tab)
         },
         focus(session: string, tab: string) {
-          writeTabs(session, { ...(store.sessionTabs[session] ?? { all: [] }), active: tab })
+          if (!store.sessionTabs[session]) {
+            setStore("sessionTabs", session, { all: [], active: tab })
+
+            return
+          }
+
+          setStore("sessionTabs", session, "active", tab)
         },
         close(session: string, tab: string) {
           const current = store.sessionTabs[session]
 
           if (!current) return
-          applyTabs(session, closeSessionTab(tabState(session), tab))
+          const next = closeSessionTab({ tabs: current, preview: ephemeral.sessionTabPreview[session] }, tab)
+          batch(() => {
+            setStore("sessionTabs", session, next.tabs)
+            setEphemeral("sessionTabPreview", session, next.preview)
+          })
         },
         /**
-         * Replaces `to`'s strip, panes, selection, preview tab and scroll offsets with copies of `from`'s, keeping
-         * `from`; a key with nothing stored copies as empty. `to` counts as just used, then pruning runs as for any new
-         * key.
+         * Replaces `to`'s strip, selection, preview tab and scroll offsets with copies of `from`'s, keeping `from`; a key
+         * with nothing stored copies as empty. `to` counts as just used, then pruning runs as for any new key.
          */
         copy(from: string, to: string) {
           const current = store.sessionTabs[from]
           usage.used.set(to, Date.now())
           batch(() => {
             scroll.flush(from)
-            setStore("sessionTabs", to, {
-              all: [...(current?.all ?? [])],
-              active: current?.active,
-              panes: current?.panes ? { ...current.panes } : undefined,
-              selected: current?.selected ? { ...current.selected } : undefined,
-            })
+            setStore("sessionTabs", to, { all: [...(current?.all ?? [])], active: current?.active })
             setEphemeral("sessionTabPreview", to, ephemeral.sessionTabPreview[from])
             scroll.drop([to])
             setStore("sessionView", to, {
-              closed: store.sessionView[from]?.closed?.map((entry) => ({ ...entry })),
               scroll: Object.fromEntries(
                 Object.entries(store.sessionView[from]?.scroll ?? {}).map(([key, value]) => [
                   key,
@@ -641,17 +603,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             })
             prune(usage.active ?? to)
           })
-        },
-        /** The side tabs closed in a session, newest first. Reactive. */
-        closed(session: string): readonly ClosedSideTab[] {
-          return store.sessionView[session]?.closed ?? []
-        },
-        setClosed(session: string, entries: readonly ClosedSideTab[]) {
-          usage.used.set(session, Date.now())
-
-          if (store.sessionView[session]) return setStore("sessionView", session, "closed", [...entries])
-          setStore("sessionView", session, { scroll: {}, closed: [...entries] })
-          prune(usage.active ?? session)
         },
         scroll(session: string, tab: string) {
           return scroll.scroll(session, tab)
@@ -664,6 +615,13 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         const key = createSessionKeyReader(sessionKey, ensureKey)
         const tabs = createMemo(() => store.sessionTabs[key()] ?? { all: [] })
 
+        const apply = (session: string, next: ReturnType<typeof openSessionTab>) => {
+          batch(() => {
+            setStore("sessionTabs", session, next.tabs)
+            setEphemeral("sessionTabPreview", session, next.preview)
+          })
+        }
+
         return {
           tabs,
           active: createMemo(() => tabs().active),
@@ -671,16 +629,26 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           preview: createMemo(() => ephemeral.sessionTabPreview[key()]),
           setActive(tab: string | undefined) {
             const session = key()
-            writeTabs(session, { ...(store.sessionTabs[session] ?? { all: [] }), active: tab })
+
+            if (!store.sessionTabs[session]) {
+              setStore("sessionTabs", session, { all: [], active: tab })
+            } else {
+              setStore("sessionTabs", session, "active", tab)
+            }
           },
           setAll(all: string[]) {
             const session = key()
-            const preview = untrack(() => ephemeral.sessionTabPreview[session])
-            writeTabs(
-              session,
-              { ...(store.sessionTabs[session] ?? { all: [] }), all },
-              preview && !all.includes(preview) ? { value: undefined } : undefined,
-            )
+            batch(() => {
+              if (!store.sessionTabs[session]) {
+                setStore("sessionTabs", session, { all, active: undefined })
+              } else {
+                setStore("sessionTabs", session, "all", all)
+              }
+
+              const preview = ephemeral.sessionTabPreview[session]
+
+              if (preview && !all.includes(preview)) setEphemeral("sessionTabPreview", session, undefined)
+            })
           },
           /** Rewrites every stored key, the selected tab and the preview together; keys that collapse into one dedupe. */
           remap(rewrite: (tab: string) => string) {
@@ -698,47 +666,54 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             const changed = all.length !== current.all.length || all.some((tab, index) => tab !== current.all[index])
 
             if (!changed && active === current.active && nextPreview === preview) return
-
-            const panes = current.panes
-              ? Object.fromEntries(Object.entries(current.panes).map(([tab, pane]) => [rewrite(tab), pane]))
-              : undefined
-
-            const selected = current.selected
-              ? Object.fromEntries(
-                  Object.entries(current.selected).flatMap(([pane, tab]) => (tab ? [[pane, rewrite(tab)]] : [])),
-                )
-              : undefined
-
             batch(() => {
-              setStore("sessionTabs", session, { all, active, panes, selected })
+              setStore("sessionTabs", session, { ...current, all, active })
               setEphemeral("sessionTabPreview", session, nextPreview)
             })
           },
           async open(tab: string) {
             const session = key()
-            applyTabs(session, openSessionTab(tabState(session), tab))
+            apply(
+              session,
+              openSessionTab(
+                { tabs: store.sessionTabs[session] ?? { all: [] }, preview: ephemeral.sessionTabPreview[session] },
+                tab,
+              ),
+            )
           },
           previewTab(tab: string) {
             const session = key()
-            applyTabs(session, previewSessionTab(tabState(session), tab))
+            apply(
+              session,
+              previewSessionTab(
+                { tabs: store.sessionTabs[session] ?? { all: [] }, preview: ephemeral.sessionTabPreview[session] },
+                tab,
+              ),
+            )
           },
           close(tab: string) {
             const session = key()
+            const current = store.sessionTabs[session]
 
-            if (!store.sessionTabs[session]) return
-            applyTabs(session, closeSessionTab(tabState(session), tab))
+            if (!current) return
+            apply(session, closeSessionTab({ tabs: current, preview: ephemeral.sessionTabPreview[session] }, tab))
           },
-          /** Moves a stored tab into `pane` before the tab `before`, or to the pane's end, and selects it. */
-          move(tab: string, pane: SessionPane, before?: string) {
+          move(tab: string, to: number) {
             const session = key()
             const current = store.sessionTabs[session]
 
-            if (!current?.all.includes(tab)) return
-            writeTabs(session, moveSessionTab(current, tab, pane, before))
-          },
-          /** Opens the next new tab, e.g. one a pane's "+" menu creates, in `pane`. */
-          target(pane: SessionPane) {
-            setEphemeral("sessionTabTarget", key(), { pane, at: Date.now() })
+            if (!current) return
+            const index = current.all.findIndex((f) => f === tab)
+
+            if (index === -1) return
+            setStore(
+              "sessionTabs",
+              session,
+              "all",
+              produce((opened) => {
+                opened.splice(to, 0, opened.splice(index, 1)[0])
+              }),
+            )
           },
         }
       },

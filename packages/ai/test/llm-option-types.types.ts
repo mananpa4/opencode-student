@@ -5,8 +5,8 @@ import {
   type LanguageModel,
   type LanguageModelProviderOptions,
   type ProviderOptions,
-} from "../src/effect.js"
-import { ai } from "../src/index.js"
+} from "../src/index.js"
+import { ai } from "../src/promise.js"
 import { OpenAIChat } from "../src/protocols.js"
 
 interface ExampleOptions {

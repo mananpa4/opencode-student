@@ -136,9 +136,7 @@ function stored(projectID: Project.ID) {
       .all()
       .pipe(
         Effect.orDie,
-        Effect.map((rows): Array<{ directory: AbsolutePath; strategy: string | null }> =>
-          rows.toSorted((a, b) => a.directory.localeCompare(b.directory)),
-        ),
+        Effect.map((rows) => rows.toSorted((a, b) => a.directory.localeCompare(b.directory))),
       ),
   )
 }
@@ -506,11 +504,7 @@ describe("Worktree", () => {
       yield* Effect.addFinalizer(() => Effect.promise(() => fs.rm(unavailable, { recursive: true, force: true })))
       yield* input.db
         .insert(WorktreeTable)
-        .values({
-          project_id: input.projectID,
-          directory: unavailable,
-          strategy: Worktree.StrategyID.make("acme/missing"),
-        })
+        .values({ project_id: input.projectID, directory: unavailable, strategy: "acme/missing" })
         .run()
         .pipe(Effect.orDie)
 
@@ -618,7 +612,7 @@ describe("Worktree", () => {
         .insert(WorktreeTable)
         .values([
           { project_id: input.projectID, directory: target },
-          { project_id: input.projectID, directory: unchanged, strategy: Worktree.StrategyID.make("git") },
+          { project_id: input.projectID, directory: unchanged, strategy: "git" },
         ])
         .run()
         .pipe(Effect.orDie)

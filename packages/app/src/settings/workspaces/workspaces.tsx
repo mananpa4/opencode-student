@@ -1,4 +1,4 @@
-import type { Component, JSX } from "solid-js"
+import type { Component } from "solid-js"
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
@@ -22,7 +22,7 @@ import { pathKey } from "@/workspaces/path-key"
 import { worktreeInventoryKey } from "@/workspaces/inventory"
 import { SettingsList } from "@/settings/list"
 import { useTabs } from "@/shell/tabs/tabs"
-import { useHostApis } from "@/runtime/plugin/root"
+import { useHostApis } from "@/runtime/extension/root"
 import { ServerConnection } from "@/runtime/server/registry"
 import type { Project } from "@/runtime/server/types"
 import {
@@ -49,7 +49,6 @@ export const SettingsWorkspaces: Component<{
   activeDirectory?: string
   resetProjectFilter?: () => number
   projectID?: string
-  headerAction?: JSX.Element
 }> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
@@ -58,7 +57,7 @@ export const SettingsWorkspaces: Component<{
   const queryClient = useQueryClient()
   const data = server.ctx.data
   const tabs = useTabs()
-  const hostApis = useHostApis()
+  const extensions = useHostApis()
 
   const [store, setStore] = createStore<{
     project: string
@@ -290,7 +289,7 @@ export const SettingsWorkspaces: Component<{
           worktree: undefined,
         })
       })
-      hostApis.workspaceRemoved({ server: context.server, directory: workspace.directory })
+      extensions.workspaceRemoved({ server: context.server, directory: workspace.directory })
       await queryClient.invalidateQueries({
         queryKey: worktreeInventoryKey(context.sdk.scope, workspace.project.id),
       })
@@ -388,11 +387,10 @@ export const SettingsWorkspaces: Component<{
     <>
       <div class="settings-tab-header settings-workspaces-header">
         <div class="settings-tab-header-row">
-          <div class="flex min-w-0 flex-col gap-1">
+          <div class="flex flex-col gap-1">
             <h2 class="settings-tab-title">{language.t("settings.tab.workspaces")}</h2>
             <span class="text-11-regular text-v2-text-text-muted">{language.t("settings.workspaces.description")}</span>
           </div>
-          <div class="settings-tab-header-actions">{props.headerAction}</div>
         </div>
       </div>
 
@@ -599,7 +597,7 @@ function DialogDeleteWorkspaces(props: {
         />
       </DialogHeader>
       <DialogFooter>
-        <Button type="button" variant="neutral" autofocus onClick={() => dialog.close()}>
+        <Button type="button" variant="neutral" onClick={() => dialog.close()}>
           {language.t("common.cancel")}
         </Button>
         <Button type="button" variant="danger" onClick={remove}>
@@ -665,7 +663,7 @@ function DialogDeleteWorkspace(props: {
         />
       </DialogHeader>
       <DialogFooter>
-        <Button type="button" variant="neutral" autofocus onClick={() => dialog.close()}>
+        <Button type="button" variant="neutral" onClick={() => dialog.close()}>
           {language.t("common.cancel")}
         </Button>
         <Button type="button" variant="danger" disabled={status.isPending || status.isError} onClick={remove}>

@@ -62,7 +62,7 @@ export const provider = {
   configure,
 }
 
-export const model: ProviderPackage.Model<Settings, AnthropicMessages.ProviderOptionsInput> = (
+export const model: ProviderPackage.Definition<Settings, AnthropicMessages.ProviderOptionsInput>["model"] = (
   modelID,
   { apiKey, authToken, baseURL, body, headers, provider, ...providerOptions },
 ) => {

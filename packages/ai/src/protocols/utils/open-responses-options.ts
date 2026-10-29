@@ -1,12 +1,15 @@
 import { Schema } from "effect"
 import { ReasoningEffort, ReasoningEfforts, type LLMRequest } from "../../schema/index.js"
-import { lenient, ProviderShared } from "../shared.js"
+import { lenient } from "../shared.js"
 
 export { ReasoningEffort, ReasoningEfforts }
 
 export const TextVerbosities = ["low", "medium", "high"] as const
 export type TextVerbosity = (typeof TextVerbosities)[number] | (string & {})
-export const TextVerbosity = ProviderShared.knownString<(typeof TextVerbosities)[number]>()
+export const TextVerbosity = Schema.declare<TextVerbosity>(
+  (value): value is TextVerbosity => typeof value === "string",
+  { title: "TextVerbosity" },
+)
 
 export const ResponseIncludables = [
   "file_search_call.results",
@@ -22,13 +25,18 @@ export type ResponseIncludable = (typeof ResponseIncludables)[number] | (string 
 
 export const ServiceTiers = ["auto", "default", "flex", "priority"] as const
 export type ServiceTier = (typeof ServiceTiers)[number] | (string & {})
-export const ServiceTier = ProviderShared.knownString<(typeof ServiceTiers)[number]>()
+export const ServiceTier = Schema.declare<ServiceTier>((value): value is ServiceTier => typeof value === "string", {
+  title: "ServiceTier",
+})
 
 export const Truncations = ["auto", "disabled"] as const
 export type Truncation = (typeof Truncations)[number]
 
 export const TextVerbositySchema = TextVerbosity
-export const ResponseIncludableSchema = ProviderShared.knownString<(typeof ResponseIncludables)[number]>()
+export const ResponseIncludableSchema = Schema.declare<ResponseIncludable>(
+  (value): value is ResponseIncludable => typeof value === "string",
+  { title: "ResponseIncludable" },
+)
 export const ServiceTierSchema = ServiceTier
 export const TruncationSchema = Schema.Literals(Truncations)
 

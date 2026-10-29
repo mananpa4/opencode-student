@@ -1,25 +1,21 @@
 import { and, asc, desc, eq, gte, lt, or, sql } from "drizzle-orm"
-import { Message } from "@opencode/ai/effect"
+import { Message } from "@opencode/ai"
 import { Effect, Option, Schema } from "effect"
 import type { Model } from "@opencode/schema/model"
 import { SessionLegacy } from "@opencode/schema/session-legacy"
 import { Database } from "../database/database.js"
 import { MessageDecodeError } from "./error.js"
 import { SessionMessage } from "./message.js"
-import type { SessionSchema } from "./schema.js"
+import { SessionSchema } from "./schema.js"
 import { Instructions } from "../instructions/index.js"
 import { InstructionState } from "./instruction-state.js"
-import { SessionBlob } from "./blob.js"
 import { SessionRecentText } from "./recent-text.js"
 import { SessionMessageTable } from "./sql.js"
-import { SessionStored } from "./stored.js"
 
 type DatabaseService = Database.Interface["db"]
 
 const decode = Schema.decodeUnknownEffect(SessionMessage.Info)
 const decodeSync = Schema.decodeUnknownSync(SessionMessage.Info)
-const decodeStoredUser = Schema.decodeUnknownEffect(SessionStored.User)
-const decodeMedia = Schema.decodeUnknownEffect(SessionMessage.MediaInfo)
 
 /**
  * Which completed compactions bound a history read. Local summaries always do. Native
@@ -36,8 +32,7 @@ export const isNativeCompaction = (
 
 /** A native compaction's window: canonical AI messages, stored as JSON. */
 export const NativeWindow = Schema.toCodecJson(Schema.Array(Message))
-const decodeNativeWindow = Schema.decodeUnknownOption(NativeWindow)
-const decodesWindow = (messages: unknown) => Option.isSome(decodeNativeWindow(messages))
+const decodesWindow = (messages: unknown) => Option.isSome(Schema.decodeUnknownOption(NativeWindow)(messages))
 
 // Like other native data, a window only replays on the model that made it. One that no longer decodes, for example
 // a malformed one from a compaction hook, is skipped the same way instead of failing the session.
@@ -49,7 +44,7 @@ const replayable = (message: SessionMessage.Info, boundary: Boundary) =>
     message.model.id === boundary.id &&
     decodesWindow(message.native.messages))
 
-const latestCompaction = Effect.fnUntraced(function* (
+export const latestCompaction = Effect.fnUntraced(function* (
   db: DatabaseService,
   sessionID: SessionSchema.ID,
   boundary: Boundary,
@@ -93,49 +88,16 @@ const rowInput = (row: typeof SessionMessageTable.$inferSelect) => ({
 
 export const decodeMessageRowSync = (row: typeof SessionMessageTable.$inferSelect) => decodeSync(rowInput(row))
 
-const decodeError = (row: typeof SessionMessageTable.$inferSelect) => () =>
-  new MessageDecodeError({
-    sessionID: row.session_id,
-    messageID: row.id,
-  })
-
 export const decodeMessageRow = (row: typeof SessionMessageTable.$inferSelect) =>
-  decode(rowInput(row)).pipe(Effect.mapError(decodeError(row)))
-
-/** Decodes a row without its blobs, so user files may stay refs. Only for readers that never use file bytes. */
-const decodeStoredRow = (
-  row: typeof SessionMessageTable.$inferSelect,
-): Effect.Effect<SessionMessage.Info | SessionStored.User, MessageDecodeError> =>
-  row.type === "user" ? decodeStoredUser(rowInput(row)).pipe(Effect.mapError(decodeError(row))) : decodeMessageRow(row)
-
-/** Decodes rows after restoring media stored in `blob`. Reads that return media must use this. */
-export const decodeMessageRows = Effect.fnUntraced(function* (
-  db: DatabaseService,
-  rows: ReadonlyArray<typeof SessionMessageTable.$inferSelect>,
-) {
-  return yield* Effect.forEach(yield* SessionBlob.hydrate(db, rows), decodeMessageRow, { concurrency: 1 })
-})
-
-/** Decodes rows for clients that fetch media themselves, so files stored in `blob` stay `media:` refs. */
-export const decodeMessageRowsWithRefs = Effect.fnUntraced(function* (
-  db: DatabaseService,
-  rows: ReadonlyArray<typeof SessionMessageTable.$inferSelect>,
-) {
-  const kept = yield* SessionBlob.keepRefs(db, rows)
-  return yield* Effect.forEach(
-    kept.rows,
-    (row) =>
-      decodeMedia(rowInput(row)).pipe(
-        Effect.mapError(decodeError(row)),
-        Effect.map((message) =>
-          message.type === "user" && message.files
-            ? { ...message, files: SessionBlob.describe(message.files, kept.meta) }
-            : message,
-        ),
-      ),
-    { concurrency: 1 },
+  decode(rowInput(row)).pipe(
+    Effect.mapError(
+      () =>
+        new MessageDecodeError({
+          sessionID: SessionSchema.ID.make(row.session_id),
+          messageID: SessionMessage.ID.make(row.id),
+        }),
+    ),
   )
-})
 
 const messageEntries = Effect.fnUntraced(function* (
   db: DatabaseService,
@@ -159,10 +121,8 @@ const messageEntries = Effect.fnUntraced(function* (
     .orderBy(asc(SessionMessageTable.seq))
     .all()
     .pipe(Effect.orDie)
-  const decoded = yield* Effect.forEach(
-    yield* SessionBlob.hydrate(db, rows),
-    (row) => decodeMessageRow(row).pipe(Effect.map((message) => ({ seq: row.seq, message }))),
-    { concurrency: 1 },
+  const decoded = yield* Effect.forEach(rows, (row) =>
+    decodeMessageRow(row).pipe(Effect.map((message) => ({ seq: row.seq, message }))),
   )
   // A window that cannot replay leaves nothing to start from, so read from the compaction before it.
   const start = decoded[0]
@@ -194,11 +154,13 @@ const withRecentText = Effect.fnUntraced(function* (
   const compaction = first?.message
   if (compaction?.type !== "compaction" || compaction.status !== "completed") return entries
   const keepID = compaction.metadata?.keepID
-  if (!Schema.is(SessionMessage.ID)(keepID)) return entries
+  if (typeof keepID !== "string") return entries
   const start = yield* db
     .select({ seq: SessionMessageTable.seq })
     .from(SessionMessageTable)
-    .where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.id, keepID)))
+    .where(
+      and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.id, SessionMessage.ID.make(keepID))),
+    )
     .get()
     .pipe(Effect.orDie)
   if (!start) return entries
@@ -215,8 +177,7 @@ const withRecentText = Effect.fnUntraced(function* (
     .orderBy(asc(SessionMessageTable.seq))
     .all()
     .pipe(Effect.orDie)
-  // The recent text names attachments by mime and name only, so their bytes are never read.
-  const kept = yield* Effect.forEach(rows, decodeStoredRow, { concurrency: 1 })
+  const kept = yield* Effect.forEach(rows, decodeMessageRow)
   const recent = kept.map(SessionRecentText.messageToText).filter(Boolean).join("\n\n")
   return [{ ...first, message: { ...compaction, metadata: { ...compaction.metadata, recent } } }, ...entries.slice(1)]
 })
@@ -275,47 +236,21 @@ export const preview = Effect.fn("SessionHistory.preview")(function* (
     .pipe(Effect.catch((error) => (error instanceof Instructions.InitializationBlocked ? error : Effect.die(error))))
 })
 
-/**
- * The synthetic messages `load(db, sessionID, "latest")` would return, read without the rest of the transcript. Under
- * that boundary every row from the latest completed compaction on is kept, and synthetic rows carry no media.
- */
-export const synthetics = Effect.fn("SessionHistory.synthetics")(function* (
-  db: DatabaseService,
-  sessionID: SessionSchema.ID,
-) {
-  const compaction = yield* latestCompaction(db, sessionID, "latest")
-  const rows = yield* db
-    .select()
-    .from(SessionMessageTable)
-    .where(
-      and(
-        eq(SessionMessageTable.session_id, sessionID),
-        eq(SessionMessageTable.type, "synthetic"),
-        compaction ? gte(SessionMessageTable.seq, compaction.seq) : undefined,
-      ),
-    )
-    .orderBy(asc(SessionMessageTable.seq))
-    .all()
-    .pipe(Effect.orDie)
-  return yield* Effect.forEach(rows, decodeMessageRow, { concurrency: 1 })
-})
-
-/** The id and text of the session's first user message. */
+/** Returns the session's first user message. */
 export const firstUserMessage = Effect.fn("SessionHistory.firstUserMessage")(function* (
   db: DatabaseService,
   sessionID: SessionSchema.ID,
 ) {
   const row = yield* db
-    .select({
-      id: SessionMessageTable.id,
-      text: sql<unknown>`json_extract(${SessionMessageTable.data}, '$.text')`,
-    })
+    .select()
     .from(SessionMessageTable)
     .where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, "user")))
     .orderBy(asc(SessionMessageTable.seq))
     .get()
     .pipe(Effect.orDie)
-  return row && Schema.is(Schema.String)(row.text) ? { id: row.id, text: row.text } : undefined
+  if (!row) return undefined
+  const message = yield* decodeMessageRow(row).pipe(Effect.orElseSucceed(() => undefined))
+  return message?.type === "user" ? message : undefined
 })
 
 export * as SessionHistory from "./history.js"

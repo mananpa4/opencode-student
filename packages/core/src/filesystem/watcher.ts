@@ -3,15 +3,17 @@ export * as Watcher from "./watcher.js"
 // @ts-ignore
 import { createWrapper } from "@parcel/watcher/wrapper.js"
 import type ParcelWatcher from "@parcel/watcher"
+import { FileSystem } from "@opencode/schema/filesystem"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { FSUtil } from "@opencode/util/fs-util"
-import { Cause, Context, Effect, Layer, PubSub, RcMap, Stream } from "effect"
+import { Cause, Context, Effect, Layer, PubSub, RcMap, Schema, Stream } from "effect"
 import { lazy } from "../util/lazy.js"
 import { watch } from "node:fs"
 import path from "path"
 import loadBinding from "./watcher-binding.js"
 
 const SUBSCRIBE_TIMEOUT_MS = 10_000
+export const Event = { Updated: FileSystem.Event.Changed }
 
 const watcher = lazy((): typeof ParcelWatcher | undefined => {
   try {
@@ -35,7 +37,7 @@ export type WatchInput =
   | { readonly path: string; readonly type: "entries"; readonly names: readonly string[] }
   | { readonly path: string; readonly type: "directory"; readonly ignore?: readonly string[] }
 
-type Subscription = {
+export type Subscription = {
   readonly unsubscribe: () => Promise<void>
   /** Backend name for logging, e.g. "node" or "fs-events". */
   readonly backend?: string
@@ -63,13 +65,14 @@ export interface Interface {
   readonly subscribe: (input: WatchInput, onReady?: Effect.Effect<void>) => Effect.Effect<Stream.Stream<Update>>
 }
 
-export interface Options {
-  readonly enabled?: boolean
-}
+export const Options = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean),
+})
+export type Options = typeof Options.Type
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Watcher") {}
 
-interface TestInterface extends Interface {
+export interface TestInterface extends Interface {
   /** Delivers one update to every active watch whose target covers `update.path`. */
   readonly emit: (update: Update) => Effect.Effect<void>
   /** Returns every subscribe call observed so far, in order. */
@@ -203,34 +206,27 @@ export const nativeLayer = Layer.succeed(
   Native.of({
     subscribe: (input) => {
       if (input.type === "file" || input.type === "entries") {
-        const directory = input.type === "file" ? path.dirname(input.target) : input.target
-        const names = new Set(input.type === "file" ? [path.basename(input.target)] : input.names)
-        return Effect.try(() =>
-          watch(directory, { recursive: false }, (_event, file) => {
+        return Effect.sync(() => {
+          const directory = input.type === "file" ? path.dirname(input.target) : input.target
+          const names = new Set(input.type === "file" ? [path.basename(input.target)] : input.names)
+          const subscription = watch(directory, { recursive: false }, (_event, file) => {
             if (file && !names.has(file)) return
             for (const name of file ? [file] : names) {
               input.publish({ path: path.join(directory, name), type: "update" })
             }
-          }),
-        ).pipe(
-          Effect.map((subscription): Subscription => {
-            subscription.on("error", (error: unknown) =>
-              Effect.runFork(Effect.logError("watcher callback failed", { path: directory, error })),
-            )
-            return { unsubscribe: () => Promise.resolve(subscription.close()), backend: "node" }
-          }),
-          // A missing directory (ENOENT) ends subscriber streams instead of crashing the watch.
-          Effect.catch((error) =>
-            Effect.logError("failed to watch directory", { path: directory, error }).pipe(Effect.as(undefined)),
-          ),
-        )
+          })
+          subscription.on("error", (error: unknown) =>
+            Effect.runFork(Effect.logError("watcher callback failed", { path: directory, error })),
+          )
+          return { unsubscribe: () => Promise.resolve(subscription.close()), backend: "node" }
+        })
       }
       return subscribeDirectory(watcher(), getBackend(), input.target, input.ignore, input.publish)
     },
   }),
 )
 
-const nativeNode = makeGlobalNode({ service: Native, layer: nativeLayer, deps: [] })
+export const nativeNode = makeGlobalNode({ service: Native, layer: nativeLayer, deps: [] })
 
 export function configured(options?: Options) {
   return makeGlobalNode({ service: Service, layer: layer(options), deps: [nativeNode] })

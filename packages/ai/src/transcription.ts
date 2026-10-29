@@ -3,7 +3,7 @@ import { Generation, ProgressEvent, QueuedEvent, type AwaitOptions } from "./gen
 import { Media } from "./media.js"
 import { MediaModel, composeRoute, tryRequest } from "./media-model.js"
 import { MediaRoute } from "./route/media.js"
-import { AIError, HttpOptions, MediaUsage, ProviderMetadata, ProviderOptions } from "./schema/index.js"
+import { AIError, HttpOptions, MediaUsage, ProviderMetadata } from "./schema/index.js"
 import { TranscriptionClient, Service } from "./transcription-client.js"
 
 // ---------------------------------------------------------------------------
@@ -48,7 +48,6 @@ export class TranscriptionModel<Options extends TranscriptionOptions = Transcrip
       id: input.id,
       provider: route.protocol.provider,
       http: input.http,
-      providerOptions: input.providerOptions,
       route: composeRoute(route, input, collectResponse) as TranscriptionRoute,
     })
   }
@@ -75,7 +74,7 @@ export class TranscriptionRequest extends Schema.Class<TranscriptionRequest>("Tr
   timestamps: Schema.optional(TranscriptionTimestamps),
   diarize: Schema.optional(Schema.Boolean),
   speakers: Schema.optional(Schema.Int),
-  providerOptions: Schema.optional(ProviderOptions),
+  providerOptions: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   http: Schema.optional(HttpOptions),
 }) {
   declare protected readonly _TranscriptionRequest: void
@@ -130,6 +129,7 @@ const transcriptFields = {
   language: Schema.optional(Schema.String),
   durationSeconds: Schema.optional(Schema.Number),
   usage: Schema.optional(MediaUsage),
+  notices: Schema.optional(Schema.Array(Media.Notice)),
   providerMetadata: Schema.optional(ProviderMetadata),
 }
 

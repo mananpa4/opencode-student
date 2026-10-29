@@ -9,7 +9,7 @@ import {
   ToolChoice,
   ToolDefinition,
   type LanguageModel,
-} from "../../src/effect.js"
+} from "../../src/index.js"
 import { MiniMax } from "../../src/providers.js"
 import { LLMClient } from "../../src/route.js"
 import { compileRequest } from "../../src/route/client.js"

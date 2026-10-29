@@ -1,4 +1,4 @@
-import type { Eval } from "../interpreter/runner.js"
+import { Effect } from "effect"
 import { constructor, methods, receiver } from "../interpreter/native.js"
 import { type AstNode, AsyncIteratorSymbol, invalidData, IteratorSymbol, typeError } from "../interpreter/model.js"
 import {
@@ -66,25 +66,27 @@ export const objectAssign = <R>(ctx: Interpreter<R>, args: Array<Value>): Value 
   return target
 }
 
-function* objectFromEntries<R>(ctx: Interpreter<R>, source: Value): Eval<Obj> {
+const objectFromEntries = <R>(ctx: Interpreter<R>, source: Value): Effect.Effect<Obj, unknown, R> => {
   const out = new Obj(ctx.builtins.Object)
-  const cursor = yield* ctx.iterate(source)
-  if (cursor === undefined) {
-    throw typeError("Object.fromEntries expects a synchronous iterable of entries.")
-  }
-  while (true) {
-    const step = yield* cursor.next()
-    if (step.done) return out
-    yield* preserveConsumerError(cursor.close, defineEntry(out, step.value))
-  }
-}
-
-// A step, so a rejected entry closes the source iterator.
-function* defineEntry(out: Obj, entry: Value): Eval<void> {
-  if (!(entry instanceof Obj) || containsOpaqueReference(entry)) {
-    throw typeError("Object.fromEntries expects [key, value] entry objects.")
-  }
-  define(out, coerceToString(getOwn(entry, 0)), getOwn(entry, 1))
+  return Effect.gen(function* () {
+    const cursor = yield* ctx.iterate(source)
+    if (cursor === undefined) {
+      throw typeError("Object.fromEntries expects a synchronous iterable of entries.")
+    }
+    while (true) {
+      const step = yield* cursor.next
+      if (step.done) return out
+      yield* preserveConsumerError(
+        cursor.close,
+        Effect.sync(() => {
+          if (!(step.value instanceof Obj) || containsOpaqueReference(step.value)) {
+            throw typeError("Object.fromEntries expects [key, value] entry objects.")
+          }
+          define(out, coerceToString(getOwn(step.value, 0)), getOwn(step.value, 1))
+        }),
+      )
+    }
+  })
 }
 
 const classTag = (value: Value): string => {
@@ -138,11 +140,11 @@ export const objectGlobal = <R>(ctx: Interpreter<R>) => {
     if (first instanceof Obj) return first
     throw typeError(`Object(${typeof first}) wrapper objects are not supported; use the primitive value directly.`)
   }
-  const object = constructor(builtins, builtins.Object, {
+  const object = constructor<R>(builtins, builtins.Object, {
     name: "Object",
     length: 1,
-    call: (_, args) => construct(args),
-    construct: (args) => construct(args),
+    call: (_, args) => Effect.sync(() => construct(args)),
+    construct: (args) => Effect.sync(() => construct(args)),
   })
   methods(builtins, object, [
     [

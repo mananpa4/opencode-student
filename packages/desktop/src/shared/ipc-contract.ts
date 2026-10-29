@@ -41,3 +41,9 @@ export type ClipboardImage = {
   width: number
   height: number
 }
+
+// A recent project the tray lists as a quick link. The renderer owns the ordering.
+export type TrayProject = {
+  name: string
+  directory: string
+}

@@ -58,11 +58,7 @@ export function Tooltip(props: TooltipProps) {
   }
 
   const sync = () => {
-    // Expanded panels still need tooltips; only an open popup suppresses its trigger's tooltip.
-    const expand = !!ref?.querySelector(
-      '[aria-haspopup]:not([aria-haspopup="false"]):is([aria-expanded="true"], [data-expanded])',
-    )
-
+    const expand = !!ref?.querySelector('[aria-expanded="true"], [data-expanded]')
     setState("expand", expand)
 
     if (expand) {
@@ -81,12 +77,8 @@ export function Tooltip(props: TooltipProps) {
   }
 
   const leave = () => {
-    // Kobalte's own pointerleave handler runs after this one and only starts the
-    // skip-delay window for neighbouring tooltips if it still sees this one open.
-    queueMicrotask(() => {
-      if (!inside()) close()
-      drop()
-    })
+    if (!inside()) close()
+    drop()
   }
 
   createEffect(() => {
@@ -97,7 +89,7 @@ export function Tooltip(props: TooltipProps) {
       subtree: true,
       childList: true,
       attributes: true,
-      attributeFilter: ["aria-expanded", "data-expanded", "aria-haspopup"],
+      attributeFilter: ["aria-expanded", "data-expanded"],
     })
     onCleanup(() => obs.disconnect())
   })

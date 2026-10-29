@@ -65,22 +65,14 @@ describe("McpInstructions", () => {
     ),
   )
 
-  it.effect("lists Code Mode servers as direct tools when the agent cannot use execute", () =>
+  it.effect("omits instructions when the agent cannot use execute", () =>
     Effect.gen(function* () {
       const service = yield* McpInstructions.Service
       const generation = yield* service
         .load([{ action: "execute", resource: "*", effect: "deny" }])
         .pipe(Effect.flatMap(readInitial))
 
-      expect(generation.text).toBe(
-        [
-          "<mcp_instructions>",
-          '  <server name="alpha">',
-          "    Alpha instructions",
-          "  </server>",
-          "</mcp_instructions>",
-        ].join("\n"),
-      )
+      expect(generation.text).toBe("")
     }).pipe(
       Effect.provide(
         layer(
@@ -124,7 +116,7 @@ describe("McpInstructions", () => {
     ),
   )
 
-  it.effect("replaces a server entry when Code Mode is disabled for it", () => {
+  it.effect("restates guidance when Code Mode is disabled for a server", () => {
     let tools: Mcp.Tool[] = [tool("alpha")]
     return Effect.gen(function* () {
       const service = yield* McpInstructions.Service
@@ -134,10 +126,12 @@ describe("McpInstructions", () => {
       const changed = yield* readUpdate(yield* service.load([]), initialized)
       expect(changed.text).toBe(
         [
-          "The following MCP server instructions have changed. Each entry replaces the previously listed server with the same name:",
+          "The available MCP server instructions have changed. This list supersedes the previous one.",
+          "<mcp_instructions>",
           '  <server name="alpha">',
           "    Alpha instructions",
           "  </server>",
+          "</mcp_instructions>",
         ].join("\n"),
       )
     }).pipe(
@@ -173,11 +167,17 @@ describe("McpInstructions", () => {
       const changed = yield* readUpdate(yield* service.load([]), added)
       expect(changed.text).toBe(
         [
-          "The following MCP server instructions have changed. Each entry replaces the previously listed server with the same name:",
+          "The available MCP server instructions have changed. This list supersedes the previous one.",
+          "<mcp_instructions>",
           '  <server name="alpha">',
           '    Use tools from this server through `execute` under `tools["alpha"]`.',
           "    Updated alpha",
           "  </server>",
+          '  <server name="beta">',
+          '    Use tools from this server through `execute` under `tools["beta"]`.',
+          "    Beta instructions",
+          "  </server>",
+          "</mcp_instructions>",
         ].join("\n"),
       )
 

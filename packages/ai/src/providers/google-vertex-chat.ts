@@ -74,9 +74,9 @@ export const provider = {
   configure,
 }
 
-export const model: ProviderPackage.Model<Settings, OpenAIProviderOptionsInput> = (
+export const model: ProviderPackage.Definition<Settings, OpenAIProviderOptionsInput>["model"] = (
   modelID,
-  { accessToken, apiKey, baseURL, body, headers, location, project, ...providerOptions }: Settings = {},
+  { accessToken, apiKey, baseURL, body, headers, location, project, ...providerOptions },
 ) => {
   if (apiKey !== undefined)
     throw new ProviderConfigurationError({ provider: id, message: "Google Vertex Chat does not support API keys" })

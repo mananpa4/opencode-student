@@ -5,21 +5,17 @@ import type { PromptHistoryComment, PromptHistoryEntry } from "../schema"
 
 export type { PromptHistoryComment, PromptHistoryEntry } from "../schema"
 
-const MAX_HISTORY = 100
+export const MAX_HISTORY = 100
 
 export type PromptHistoryStoredEntry = PromptHistoryEntry
 
 function cloneSelection(selection: SelectedLineRange): SelectedLineRange {
-  const result: SelectedLineRange = {
+  return {
     start: selection.start,
     end: selection.end,
+    ...(selection.side ? { side: selection.side } : {}),
+    ...(selection.endSide ? { endSide: selection.endSide } : {}),
   }
-
-  if (selection.side) result.side = selection.side
-
-  if (selection.endSide) result.endSide = selection.endSide
-
-  return result
 }
 
 export function clonePromptHistoryComments(comments: PromptHistoryComment[]) {
@@ -93,8 +89,6 @@ function isPromptEqual(entryA: PromptHistoryStoredEntry, entryB: PromptHistorySt
     if (partA.type !== partB.type) return false
 
     if (partA.type === "text" && partA.content !== (partB.type === "text" ? partB.content : "")) return false
-
-    if (partA.type === "session" && (partB.type !== "session" || partA.id !== partB.id)) return false
 
     if (partA.type === "file") {
       if (partA.path !== (partB.type === "file" ? partB.path : "")) return false

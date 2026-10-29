@@ -1,6 +1,5 @@
 import type { IntegrationOAuthMethodRegistration } from "@opencode/plugin/effect/integration"
 import type { SessionRequestKind, SessionTitle } from "@opencode/plugin/effect/session"
-import { isRecord } from "@opencode/util/record"
 import { Effect, Option, Schema, Semaphore, Stream } from "effect"
 import { IntegrationConnection } from "../../integration/connection.js"
 import { Credential } from "../../credential.js"
@@ -520,16 +519,16 @@ export function interactionType(kind: SessionRequestKind, child: boolean) {
 type RequestMetadata = ReturnType<typeof requestMetadata>
 
 function requestMetadata(url: string, body: unknown) {
-  if (!isRecord(body)) return { agent: false, vision: false }
+  if (!record(body)) return { agent: false, vision: false }
   if (Array.isArray(body.input)) {
     const last = body.input.at(-1)
     return {
-      agent: !isRecord(last) || last.role !== "user",
+      agent: !record(last) || last.role !== "user",
       vision: body.input.some(
         (item) =>
-          isRecord(item) &&
+          record(item) &&
           Array.isArray(item.content) &&
-          item.content.some((part) => isRecord(part) && part.type === "input_image"),
+          item.content.some((part) => record(part) && part.type === "input_image"),
       ),
     }
   }
@@ -537,31 +536,35 @@ function requestMetadata(url: string, body: unknown) {
   const last = body.messages.at(-1)
   if (url.includes("completions")) {
     return {
-      agent: !isRecord(last) || last.role !== "user",
+      agent: !record(last) || last.role !== "user",
       vision: body.messages.some(
         (message) =>
-          isRecord(message) &&
+          record(message) &&
           Array.isArray(message.content) &&
-          message.content.some((part) => isRecord(part) && part.type === "image_url"),
+          message.content.some((part) => record(part) && part.type === "image_url"),
       ),
     }
   }
-  const content = isRecord(last) && Array.isArray(last.content) ? last.content : []
+  const content = record(last) && Array.isArray(last.content) ? last.content : []
   return {
     agent:
-      !isRecord(last) || last.role !== "user" || !content.some((part) => isRecord(part) && part.type !== "tool_result"),
+      !record(last) || last.role !== "user" || !content.some((part) => record(part) && part.type !== "tool_result"),
     vision: body.messages.some(
       (message) =>
-        isRecord(message) &&
+        record(message) &&
         Array.isArray(message.content) &&
         message.content.some(
           (part) =>
-            isRecord(part) &&
+            record(part) &&
             (part.type === "image" ||
               (part.type === "tool_result" &&
                 Array.isArray(part.content) &&
-                part.content.some((nested) => isRecord(nested) && nested.type === "image"))),
+                part.content.some((nested) => record(nested) && nested.type === "image"))),
         ),
     ),
   }
+}
+
+function record(input: unknown): input is Record<string, unknown> {
+  return typeof input === "object" && input !== null && !Array.isArray(input)
 }

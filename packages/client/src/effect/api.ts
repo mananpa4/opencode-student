@@ -1,7 +1,6 @@
 import type { WebsearchApi } from "./api/api.js"
 
 export type { RpcApi, RpcClient } from "./rpc.js"
-export type { SelectedEvent } from "../shared-events.js"
 
 export type * from "./api/api.js"
 

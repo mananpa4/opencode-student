@@ -20,17 +20,7 @@ import {
 import { type PreloadFileDiffResult, type PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 import { createMediaQuery } from "@solid-primitives/media"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import {
-  ComponentProps,
-  createEffect,
-  createMemo,
-  createSignal,
-  on,
-  onCleanup,
-  onMount,
-  Show,
-  splitProps,
-} from "solid-js"
+import { ComponentProps, createEffect, createMemo, createSignal, onCleanup, onMount, Show, splitProps } from "solid-js"
 import { createDefaultOptions, styleVariables } from "../pierre"
 import { markCommentedDiffLines, markCommentedFileLines } from "../pierre/commented-lines"
 import { fixDiffSelection, findDiffSide, type DiffSelectionSide } from "../pierre/diff-selection"
@@ -52,10 +42,12 @@ import {
   readShadowLineSelection,
 } from "../pierre/file-selection"
 import { createLineNumberSelectionBridge, restoreShadowTextSelection } from "../pierre/selection-bridge"
-import { acquireVirtualizer, virtualizeLineThreshold, virtualMetrics } from "../pierre/virtualizer"
+import { acquireVirtualizer, virtualMetrics } from "../pierre/virtualizer"
 import { getWorkerPool } from "../pierre/worker"
 import { FileMedia, type FileMediaOptions } from "./file-media"
 import { FileSearchBar } from "./file-search"
+
+const VIRTUALIZE_BYTES = 500_000
 
 const codeMetrics = {
   ...DEFAULT_VIRTUAL_FILE_METRICS,
@@ -695,22 +687,6 @@ function createSharedVirtualStrategy(host: () => HTMLDivElement | undefined, ena
   }
 }
 
-// Pierre draws nothing until its worker pool initializes, and a virtualizer that first sees an empty file at the top
-// of its scroller anchors the file's bottom edge, then scrolls to the end once the rows arrive.
-function createPoolReady() {
-  const [settled, setSettled] = createSignal(false)
-
-  return (pool: ReturnType<typeof getWorkerPool>) => {
-    if (!pool || pool.isInitialized() || settled()) return true
-    void pool
-      .initialize()
-      .catch(() => undefined)
-      .then(() => setSettled(true))
-
-    return false
-  }
-}
-
 function parseLine(node: HTMLElement) {
   if (!node.dataset.line) return
   const value = parseInt(node.dataset.line, 10)
@@ -821,22 +797,52 @@ function ViewerShell(props: {
 
 function TextViewer<T>(props: TextFileProps<T>) {
   let instance: PierreFile<T> | VirtualizedFile<T> | undefined
-  let instanceVirtualizer: Virtualizer | undefined
   let viewer!: Viewer
 
   const [local, others] = splitProps(props, textKeys)
 
+  const text = () => {
+    const value = local.file.contents as unknown
+
+    if (typeof value === "string") return value
+
+    if (Array.isArray(value)) return value.join("\n")
+
+    if (value == null) return ""
+
+    // oxlint-disable-next-line no-base-to-string -- file contents cast to unknown, coercion is intentional
+    return String(value)
+  }
+
   const lineCount = () => {
-    const value = local.file.contents
+    const value = text()
     const total = value.split("\n").length - (value.endsWith("\n") ? 1 : 0)
 
     return Math.max(1, total)
   }
 
-  const virtual = createMemo(() => lineCount() > virtualizeLineThreshold)
+  const bytes = createMemo(() => {
+    const value = local.file.contents as unknown
+
+    if (typeof value === "string") return value.length
+
+    if (Array.isArray(value)) {
+      return value.reduce(
+        // oxlint-disable-next-line no-base-to-string -- array parts coerced intentionally
+        (sum, part) => sum + (typeof part === "string" ? part.length + 1 : String(part).length + 1),
+        0,
+      )
+    }
+
+    if (value == null) return 0
+
+    // oxlint-disable-next-line no-base-to-string -- file contents cast to unknown, coercion is intentional
+    return String(value).length
+  })
+
+  const virtual = createMemo(() => bytes() > VIRTUALIZE_BYTES)
 
   const virtuals = createLocalVirtualStrategy(() => viewer.wrapper, virtual)
-  const poolReady = createPoolReady()
 
   const lineFromMouseEvent = (event: MouseEvent): MouseHit => mouseHit(event, parseLine)
 
@@ -989,28 +995,21 @@ function TextViewer<T>(props: TextFileProps<T>) {
     const workerPool = getWorkerPool()
     const virtualizer = virtuals.get()
 
-    if (virtualizer && !poolReady(workerPool)) return
-    // An instance keeps the virtualizer it was built with; options and contents update in place.
-    const reset = instance !== undefined && instanceVirtualizer !== virtualizer
-    const forceRender = !reset && instance !== undefined && !areOptionsEqual(instance.options, opts)
-
     renderViewer({
       viewer,
       current: instance,
-      reset,
+      reset: instance !== undefined,
       create: () =>
         virtualizer
           ? new VirtualizedFile<T>(opts, virtualizer, codeMetrics, workerPool)
           : new PierreFile<T>(opts, workerPool),
-      update: (value) => value.setOptions(opts),
       assign: (value) => {
         instance = value
-        instanceVirtualizer = virtualizer
       },
       draw: (value) => {
+        const contents = text()
         value.render({
-          file: local.file,
-          forceRender,
+          file: typeof local.file.contents === "string" ? local.file : { ...local.file, contents },
           lineAnnotations: [],
           containerWrapper: viewer.container,
         })
@@ -1022,7 +1021,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
   useAnnotationRerender<LineAnnotation<T>>({
     viewer,
     current: () => instance,
-    annotations: () => local.annotations ?? [],
+    annotations: () => (local.annotations as LineAnnotation<T>[] | undefined) ?? [],
   })
 
   // -- cleanup --
@@ -1030,7 +1029,6 @@ function TextViewer<T>(props: TextFileProps<T>) {
   onCleanup(() => {
     instance?.cleanUp()
     instance = undefined
-    instanceVirtualizer = undefined
     virtuals.cleanup()
   })
 
@@ -1059,19 +1057,12 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
 
   const lineFromMouseEvent = (event: MouseEvent): MouseHit => mouseHit(event, findDiffLineNumber, diffMouseSide)
 
-  // Rows outside a virtualized window are not in the DOM yet; keep the range so Pierre applies it when they render.
-  const fixSelection = (range: SelectedLineRange | null) => {
-    const fixed = fixDiffSelection(viewer.getRoot(), range)
-
-    return fixed === null && instance instanceof VirtualizedFileDiff ? range : fixed
-  }
-
   const setSelectedLines = (range: SelectedLineRange | null, preserve?: { root: ShadowRoot; text: Range }) => {
     const active = instance
 
     if (!active) return
 
-    const fixed = fixSelection(range)
+    const fixed = fixDiffSelection(viewer.getRoot(), range)
 
     if (fixed === undefined) {
       viewer.lastSelection = range
@@ -1156,8 +1147,6 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
     () => local.virtualize !== false,
   )
 
-  const poolReady = createPoolReady()
-
   const large = createMemo(() => {
     if (local.fileDiff) {
       const before = local.fileDiff.deletionLines.join("")
@@ -1166,8 +1155,8 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
       return Math.max(before.length, after.length) > 500_000
     }
 
-    const before = local.before?.contents ?? ""
-    const after = local.after?.contents ?? ""
+    const before = typeof local.before?.contents === "string" ? local.before.contents : ""
+    const after = typeof local.after?.contents === "string" ? local.after.contents : ""
 
     return Math.max(before.length, after.length) > 500_000
   })
@@ -1180,7 +1169,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
 
   const lineCallbacks = createLineCallbacks({
     viewer,
-    normalize: fixSelection,
+    normalize: (range) => fixDiffSelection(viewer.getRoot(), range),
     onLineSelected: (range) => local.onLineSelected?.(range),
     onLineSelectionEnd: (range) => local.onLineSelectionEnd?.(range),
     onLineNumberSelectionEnd: (range) => local.onLineNumberSelectionEnd?.(range),
@@ -1200,45 +1189,6 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
     return { ...perf, disableLineNumbers: props.disableLineNumbers ?? true }
   })
 
-  // A virtualized diff only renders rows near the viewport, so jumping to a selection must scroll it into range first.
-  let pendingReveal: SelectedLineRange | undefined
-
-  const revealSelection = () => {
-    const active = instance
-    const range = pendingReveal
-
-    if (!active || !range) return
-
-    if (!(active instanceof VirtualizedFileDiff) || !instanceVirtualizer) {
-      pendingReveal = undefined
-
-      return
-    }
-
-    const position = active.getLinePosition(Math.min(range.start, range.end), range.side)
-    const root = instanceVirtualizer.getRoot()
-
-    // Keep the request until the diff has a layout to measure; the next render retries it.
-    if (!position || !root) return
-    pendingReveal = undefined
-    const top = instanceVirtualizer.getOffsetInScrollContainer(viewer.container) + position.top
-    const scrollTop = instanceVirtualizer.getScrollTop()
-    const height = root instanceof Document ? window.innerHeight : root.clientHeight
-
-    if (top >= scrollTop && top + position.height <= scrollTop + height) return
-    instanceVirtualizer.scrollTo({ top: top - height / 2 })
-  }
-
-  createEffect(
-    on(
-      () => local.selectedLines,
-      (range) => {
-        pendingReveal = range ?? undefined
-        revealSelection()
-      },
-    ),
-  )
-
   const notify = (done?: VoidFunction) => {
     notifyRendered({
       viewer,
@@ -1247,7 +1197,6 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
       onReady: () => {
         done?.()
         setSelectedLines(viewer.lastSelection)
-        revealSelection()
         viewer.find.refresh({ reset: true })
         local.onRendered?.()
       },
@@ -1266,10 +1215,8 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
     // Worker render options override per-viewer options, including the large-file fallback.
     const workerPool = getWorkerPool(large() ? "none" : "word-line")
     const virtualizer = virtuals.get()
-
-    if (virtualizer && !poolReady(workerPool)) return
-    const beforeContents = local.before?.contents ?? ""
-    const afterContents = local.after?.contents ?? ""
+    const beforeContents = typeof local.before?.contents === "string" ? local.before.contents : ""
+    const afterContents = typeof local.after?.contents === "string" ? local.after.contents : ""
     const done = preserve(viewer)
 
     onCleanup(done)
@@ -1356,7 +1303,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
   useAnnotationRerender<DiffLineAnnotation<T>>({
     viewer,
     current: () => instance,
-    annotations: () => local.annotations ?? [],
+    annotations: () => (local.annotations as DiffLineAnnotation<T>[] | undefined) ?? [],
   })
 
   // -- cleanup --

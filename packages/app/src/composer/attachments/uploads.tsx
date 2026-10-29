@@ -25,20 +25,13 @@ export const uploads = {
     work: (report: (loaded: number) => void, signal: AbortSignal) => Promise<T>,
   ): Promise<T | undefined> {
     const controller = new AbortController()
-
-    // The work may wait where it cannot observe the signal, such as a request queued behind
-    // others, so cancelling settles without it.
-    const cancelled = new Promise<undefined>((resolve) =>
-      controller.signal.addEventListener("abort", () => resolve(undefined), { once: true }),
-    )
-
     setState("items", (items) => [...items, { ...input, loaded: 0, cancel: () => controller.abort() }])
 
     try {
-      return await Promise.race([
-        work((loaded) => setState("items", (item) => item.id === input.id, "loaded", loaded), controller.signal),
-        cancelled,
-      ])
+      return await work(
+        (loaded) => setState("items", (item) => item.id === input.id, "loaded", loaded),
+        controller.signal,
+      )
     } catch (error) {
       if (controller.signal.aborted) return undefined
       throw error

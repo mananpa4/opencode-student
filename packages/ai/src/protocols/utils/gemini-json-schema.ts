@@ -3,7 +3,7 @@ import { isRecord } from "../../utils/record.js"
 
 // Gemini's `parametersJsonSchema` accepts standard JSON Schema, but rejects a few shapes that
 // published tool schemas commonly contain. Rewrite only those and send everything else unchanged.
-export const SCHEMA_MAPS = new Set([
+const SCHEMA_MAPS = new Set([
   "properties",
   "patternProperties",
   "$defs",
@@ -11,9 +11,9 @@ export const SCHEMA_MAPS = new Set([
   "dependentSchemas",
   "dependencies",
 ])
-export const VALUES = new Set(["const", "default", "enum", "examples", "dependentRequired"])
+const VALUES = new Set(["const", "default", "enum", "examples", "dependentRequired"])
 
-export const mapValues = (record: Record<string, unknown>, map: (value: unknown, key: string) => unknown) =>
+const mapValues = (record: Record<string, unknown>, map: (value: unknown, key: string) => unknown) =>
   Object.fromEntries(Object.entries(record).map(([key, value]) => [key, map(value, key)]))
 
 const normalizeNode = (schema: unknown): unknown => {

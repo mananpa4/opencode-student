@@ -751,8 +751,8 @@ describe("SessionPrompt preparation", () => {
         input,
       }
       const items = yield* Effect.forEach([0, 1], () => SessionPrompt.prepare(request)).pipe(
-        fixture.instances.provide(request.session),
-        Effect.satisfiesServicesType<FSUtil.Service | Database.Service>(),
+        Effect.provideService(Instance.Service, fixture.instances),
+        Effect.satisfiesServicesType<FSUtil.Service>(),
       )
 
       expect(items[0]).toEqual(items[1])

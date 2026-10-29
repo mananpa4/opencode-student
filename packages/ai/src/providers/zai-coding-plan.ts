@@ -80,9 +80,9 @@ export const chat = provider.chat
 export const messages = provider.messages
 export const responses = provider.responses
 
-export const model: ProviderPackage.Model<Settings, ChatOptionsInput> = (
+export const model: ProviderPackage.Definition<Settings, ChatOptionsInput>["model"] = (
   modelID,
-  { apiKey, baseURL, body, headers, ...providerOptions }: Settings = {},
+  { apiKey, baseURL, body, headers, ...providerOptions },
 ) =>
   configure({
     apiKey,

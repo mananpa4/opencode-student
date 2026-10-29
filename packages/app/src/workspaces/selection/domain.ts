@@ -123,14 +123,27 @@ export function pickerRelativePath(base: string | undefined, path: string) {
   return targetPath.slice(prefix.length)
 }
 
-export function currentPickerSuggestions<T>(
-  result: { query: string; items: readonly T[] } | undefined,
-  query: string,
-  loading = false,
-) {
-  if (result?.query !== query && !loading) return []
+export function currentPickerSuggestions<T>(result: { query: string; items: readonly T[] } | undefined, query: string) {
+  if (result?.query !== query) return []
 
-  return result?.items ?? []
+  return result.items
+}
+
+export function preloadTreeDirectories(
+  parent: string,
+  nodes: ReadonlyArray<{ name: string; type: "file" | "directory" }>,
+) {
+  return treeEntries(
+    parent,
+    nodes.filter((node) => node.type === "directory"),
+  )
+}
+
+export function advanceTreePreload(advanced: Set<string>, path: string) {
+  if (advanced.has(path)) return false
+  advanced.add(path)
+
+  return true
 }
 
 export function activeTreeNavigation(request: number, current: number) {
@@ -219,6 +232,10 @@ export function createPriorityTaskQueue<T>(concurrency: number) {
   return { schedule, promote }
 }
 
+export function nextTreeScrollTop(current: number, delta: number, scrollHeight: number, clientHeight: number) {
+  return Math.min(Math.max(0, scrollHeight - clientHeight), Math.max(0, current + delta))
+}
+
 export function nextSuggestionIndex(current: number, delta: -1 | 1, count: number) {
   if (count === 0) return -1
 
@@ -253,7 +270,7 @@ export function selectedTreePath(root: string, path: string, mode: "directory" |
   return directory ? nativePickerPath(absoluteTreePath(root, path)) : undefined
 }
 
-function nativePickerPath(path: string) {
+export function nativePickerPath(path: string) {
   const value = trimPickerPath(path)
 
   if (/^[A-Za-z]:\//.test(value) || value.startsWith("//")) return value.replaceAll("/", "\\")
@@ -271,7 +288,7 @@ export function cleanPickerInput(value: string) {
   return first.replace(/[\u0000-\u001F\u007F]/g, "").trim()
 }
 
-function normalizePickerPath(input: string) {
+export function normalizePickerPath(input: string) {
   const value = input.replaceAll("\\", "/")
 
   if (value.startsWith("//") && !value.startsWith("///")) return "//" + value.slice(2).replace(/\/+/g, "/")
@@ -279,7 +296,7 @@ function normalizePickerPath(input: string) {
   return value.replace(/\/+/g, "/")
 }
 
-function normalizePickerDrive(input: string) {
+export function normalizePickerDrive(input: string) {
   const value = normalizePickerPath(input)
 
   if (/^[A-Za-z]:$/.test(value)) return value + "/"
@@ -287,7 +304,7 @@ function normalizePickerDrive(input: string) {
   return value
 }
 
-function trimPickerPath(input: string) {
+export function trimPickerPath(input: string) {
   const value = normalizePickerDrive(input)
 
   if (value === "/" || value === "//" || /^[A-Za-z]:\/$/.test(value)) return value
@@ -295,7 +312,7 @@ function trimPickerPath(input: string) {
   return value.replace(/\/+$/, "")
 }
 
-function joinPickerPath(base: string | undefined, relative: string) {
+export function joinPickerPath(base: string | undefined, relative: string) {
   const root = trimPickerPath(base ?? "")
   const path = trimPickerPath(relative).replace(/^\/+/, "")
 
@@ -365,36 +382,6 @@ export function displayPickerPath(path: string, input: string, home: string) {
   if (/^[A-Za-z]:\//.test(trimPickerPath(home)) || /^[A-Za-z]:\//.test(value)) return value.replaceAll("/", "\\")
 
   return pickerTilde(value, home) || value
-}
-
-export function shortenPickerRecentPath(path: string, home: string) {
-  const display = displayPickerPath(path, "", home)
-
-  if (display.startsWith("~/")) {
-    const parts = display.slice(2).split("/").filter(Boolean)
-
-    if (parts.length <= 2) return display
-
-    return `~/…/${parts.slice(-2).join("/")}`
-  }
-
-  if (display.startsWith("/") && !display.startsWith("//")) {
-    const parts = display.slice(1).split("/").filter(Boolean)
-
-    if (parts.length <= 2) return display
-
-    return `/${parts[0]}/…/${parts.slice(-2).join("/")}`
-  }
-
-  if (/^[A-Za-z]:\\/.test(display)) {
-    const parts = display.split("\\").filter(Boolean)
-
-    if (parts.length <= 3) return display
-
-    return `${parts[0]}\\…\\${parts.slice(-2).join("\\")}`
-  }
-
-  return display
 }
 
 export async function listPickerDirectory(

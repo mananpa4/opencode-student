@@ -4,7 +4,6 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { Button } from "@opencode/ui/button"
 import { showToast } from "@/shell/notifications/toast"
 import fuzzysort from "fuzzysort"
-import { Predicate } from "effect"
 import {
   DEFAULT_PALETTE_KEYBIND,
   formatKeybind,
@@ -14,13 +13,12 @@ import {
   type CommandSection,
 } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
-import { usePluginHost } from "@/runtime/plugin/host"
 import { useSettings } from "@/settings/model"
 import { SettingsList } from "@/settings/list"
 import { SettingsSearchEmpty } from "@/settings/search-empty"
 import { SettingsSearchField } from "@/settings/search-field"
 
-const IS_MAC = typeof navigator !== "undefined" && /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
+const IS_MAC = typeof navigator === "object" && /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
 
 const PALETTE_ID = "command.palette"
 
@@ -143,26 +141,20 @@ function signatures(config: string | undefined) {
   return sigs
 }
 
-function listFor(
-  command: Pick<CommandContext, "catalog" | "options">,
-  map: KeybindMap,
-  palette: string,
-  plugins: ReadonlySet<string> | undefined,
-) {
+function keybinds(value: unknown): KeybindMap {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+
+  return value as KeybindMap
+}
+
+function listFor(command: Pick<CommandContext, "catalog" | "options">, map: KeybindMap, palette: string) {
   const out = new Map<string, KeybindMeta>()
   out.set(PALETTE_ID, { title: palette, group: "General" })
-  // A command that shares another's shortcut is set through that command, unless it already has its own.
-  const follower = (opt: { id: string; follows?: string }) => !!opt.follows && !Predicate.isString(map[opt.id])
 
   for (const opt of command.catalog) {
     if (opt.id.startsWith("suggested.")) continue
 
-    // The catalog remembers commands that are not registered right now; a removed or renamed plugin's never return.
-    if (opt.plugin && plugins && !plugins.has(opt.plugin)) continue
-
     if (opt.hidden) continue
-
-    if (follower(opt)) continue
     out.set(opt.id, { title: opt.title, group: groupFor(opt.id, opt.section) })
   }
 
@@ -170,13 +162,11 @@ function listFor(
     if (opt.id.startsWith("suggested.")) continue
 
     if (opt.hidden) continue
-
-    if (follower(opt)) continue
     out.set(opt.id, { title: opt.title, group: groupFor(opt.id, opt.section) })
   }
 
   for (const [id, value] of Object.entries(map)) {
-    if (!Predicate.isString(value)) continue
+    if (typeof value !== "string") continue
 
     if (out.has(id)) continue
     out.set(id, { title: id, group: groupFor(id) })
@@ -246,10 +236,8 @@ function filteredFor(
 export function createKeybindSettingsController(
   input: {
     command: Pick<CommandContext, "catalog" | "options" | "keybinds">
-    /** The ids of the installed GUI plugins; remembered commands of any other plugin are not listed. */
-    plugins?: () => ReadonlySet<string>
     settings: {
-      current: { keybinds?: KeybindMap }
+      current: { keybinds: unknown }
       keybinds: Pick<SettingsContext["keybinds"], "get" | "set" | "resetAll">
     }
     target?: Document
@@ -257,13 +245,13 @@ export function createKeybindSettingsController(
   },
   language: Pick<LanguageContext, "locale" | "t"> = useLanguage(),
 ) {
-  const [store, setStore] = createStore<{ active: string | null }>({ active: null })
-  const overrides = createMemo(() => input.settings.current.keybinds ?? {})
+  const [store, setStore] = createStore({ active: null as string | null })
+  const overrides = createMemo(() => keybinds(input.settings.current.keybinds))
 
   const list = createMemo(() => {
     language.locale()
 
-    return listFor(input.command, overrides(), language.t("command.palette"), input.plugins?.())
+    return listFor(input.command, overrides(), language.t("command.palette"))
   })
 
   const grouped = createMemo(() => groupedFor(list()))
@@ -274,7 +262,7 @@ export function createKeybindSettingsController(
 
     const custom = input.settings.keybinds.get(id)
 
-    if (Predicate.isString(custom)) return custom
+    if (typeof custom === "string") return custom
 
     const live = input.command.options.find((item) => item.id === id)
 
@@ -320,11 +308,6 @@ export function createKeybindSettingsController(
     input.command.keybinds(false)
   }
 
-  const unbind = (id: string) => {
-    input.settings.keybinds.set(id, "none")
-    stop()
-  }
-
   const notify = input.notify ?? ((toast: { title: string; description: string }) => showToast(toast))
 
   const handle = (event: KeyboardEvent) => {
@@ -350,7 +333,8 @@ export function createKeybindSettingsController(
       !event.shiftKey
 
     if (clear) {
-      unbind(id)
+      input.settings.keybinds.set(id, "none")
+      stop()
 
       return
     }
@@ -384,7 +368,7 @@ export function createKeybindSettingsController(
     stop()
   }
 
-  const target = input.target ?? (typeof document !== "undefined" ? document : undefined)
+  const target = input.target ?? (typeof document === "object" ? document : undefined)
 
   if (target) makeEventListener(target, "keydown", handle, { capture: true })
 
@@ -403,10 +387,9 @@ export function createKeybindSettingsController(
     capture: {
       active: () => store.active,
       toggle,
-      unbind,
     },
     settings: {
-      hasOverrides: () => Object.values(overrides()).some(Predicate.isString),
+      hasOverrides: () => Object.values(overrides()).some((value) => typeof value === "string"),
       reset: () => {
         stop()
         input.settings.keybinds.resetAll()
@@ -422,12 +405,9 @@ export function createKeybindSettingsController(
 export function SettingsKeybinds(props: { active?: boolean }) {
   const command = useCommand()
   const settings = useSettings()
-  const host = usePluginHost()
-  const plugins = createMemo(() => new Set(host.definitions().map((definition) => definition.id)))
 
   const controller = createKeybindSettingsController({
     command,
-    plugins,
     settings,
   })
 
@@ -440,7 +420,6 @@ export function SettingsKeybinds(props: { active?: boolean }) {
       keybind={controller.catalog.keybind}
       active={controller.capture.active()}
       onCapture={controller.capture.toggle}
-      onUnbind={controller.capture.unbind}
       hasOverrides={controller.settings.hasOverrides()}
       onReset={controller.settings.reset}
     />
@@ -455,7 +434,6 @@ function SettingsKeybindsView(props: {
   keybind: (id: string) => string
   active: string | null
   onCapture: (id: string) => void
-  onUnbind: (id: string) => void
   hasOverrides: boolean
   onReset: () => void
 }) {
@@ -496,35 +474,23 @@ function SettingsKeybindsView(props: {
                         const binding = () => props.keybind(id)
 
                         return (
-                          <div class="flex items-center justify-between gap-4 py-3 border-b border-v2-border-border-base last:border-none">
+                          <div class="flex items-center justify-between gap-4 py-3 border-b border-border-weak-base last:border-none">
                             <span>{props.title(id)}</span>
-                            <div class="flex items-center gap-1">
-                              <Show when={props.active === id && binding()}>
-                                <Button
-                                  type="button"
-                                  size="small"
-                                  variant="ghost-danger"
-                                  onClick={() => props.onUnbind(id)}
-                                >
-                                  {language.t("settings.shortcuts.unbind")}
-                                </Button>
-                              </Show>
-                              <Button
-                                type="button"
-                                size="small"
-                                variant={binding() ? "ghost" : "ghost-muted"}
-                                data-keybind-id={id}
-                                data-expanded={props.active === id ? "" : undefined}
-                                onClick={() => props.onCapture(id)}
+                            <Button
+                              type="button"
+                              size="small"
+                              variant={binding() ? "ghost" : "ghost-muted"}
+                              data-keybind-id={id}
+                              data-expanded={props.active === id ? "" : undefined}
+                              onClick={() => props.onCapture(id)}
+                            >
+                              <Show
+                                when={props.active === id}
+                                fallback={binding() || language.t("settings.shortcuts.unassigned")}
                               >
-                                <Show
-                                  when={props.active === id}
-                                  fallback={binding() || language.t("settings.shortcuts.unassigned")}
-                                >
-                                  {language.t("settings.shortcuts.pressKeys")}
-                                </Show>
-                              </Button>
-                            </div>
+                                {language.t("settings.shortcuts.pressKeys")}
+                              </Show>
+                            </Button>
                           </div>
                         )
                       }}

@@ -5,7 +5,7 @@ import { ServerConnection, useServers } from "@/runtime/server/registry"
 import { useTabs } from "@/shell/tabs/tabs"
 import { type ServerHealth } from "@/runtime/server/health"
 import { showToast } from "@/shell/notifications/toast"
-import { usePluginServers } from "@/runtime/plugin/servers"
+import { useExtensionServers } from "@/runtime/extension/servers"
 
 export function sortServerConnections(input: {
   servers: ServerConnection.Any[]
@@ -32,13 +32,13 @@ export function sortServerConnections(input: {
 
 export function useServerActionsController() {
   const server = useServers()
-  const plugins = usePluginServers()
+  const extensions = useExtensionServers()
   const tabs = useTabs()
   const language = useLanguage()
 
   const remove = async (key: ServerConnection.Key) => {
     try {
-      await plugins.entry(key)?.entry.remove?.()
+      await extensions.entry(key)?.entry.remove?.()
       tabs.removeServer(key)
       server.remove(key)
     } catch (err) {

@@ -1,6 +1,6 @@
 export * as TodoTool from "./todo.js"
 
-import { ToolFailure } from "@opencode/ai/effect"
+import { ToolFailure } from "@opencode/ai"
 import type { Context } from "@opencode/plugin/effect/plugin"
 import { Effect, Schema } from "effect"
 import { Config } from "../../config.js"

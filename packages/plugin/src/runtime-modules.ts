@@ -40,13 +40,11 @@ export function discoverPluginRuntimeSpecifiers(
     entries.set(pkgName, toLoadPath(rootEntry))
     for (const file of new Bun.Glob(`**/*${ext}`).scanSync({ cwd: scanDir })) {
       const normalized = file.replaceAll("\\", "/")
-      // The GUI SDK and its Vite preset (`gui/`) run in the desktop app and at build time, never in the server or the TUI.
       if (
         normalized.startsWith("internal/") ||
         normalized.includes("/internal/") ||
         normalized.startsWith("source.") ||
-        normalized.startsWith("runtime") ||
-        normalized.startsWith("gui/")
+        normalized.startsWith("runtime")
       ) {
         continue
       }

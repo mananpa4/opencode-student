@@ -1,10 +1,19 @@
+/**
+ * How the window shows the desktop behind it. `system-backdrop` is drawn by DWM (Windows 11 22H2+,
+ * macOS vibrancy), so the page can keep its normal glass fills. `alpha` is per-pixel transparency
+ * with no system blur (Windows 10), so the page has to compensate with its own floor.
+ */
+export type WindowTransparency = "off" | "system-backdrop" | "alpha"
+
 // What the main process already knows when it creates a window, handed to the renderer through the
 // preload's argv so the shell can mount before the IPC port exists. Undefined means "ask over IPC".
 export type WindowBootstrap = {
   id: string
   firstLaunchPending?: boolean
-  /** The app runs packaged (`app.isPackaged`), as plugins' `App.packaged` reports in both processes. */
+  /** The app runs packaged (`app.isPackaged`), as extensions' `Build.packaged` reports in both processes. */
   packaged?: boolean
+  /** The window composites the desktop behind it, so the page must not paint an opaque floor. */
+  transparency?: WindowTransparency
 }
 
 const prefix = "--opencode-window="

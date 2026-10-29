@@ -1,24 +1,27 @@
 {
   "name": "@opencode/desktop",
   "private": true,
-  "version": "2.2.0",
+  "version": "2.1.1",
   "type": "module",
   "license": "MIT",
   "homepage": "https://opencode.ai",
   "author": {
-    "name": "OpenCode",
+    "name": "OpenCode Student",
     "email": "hello@opencode.ai"
   },
   "scripts": {
-    "typecheck": "bun check --no-script -b",
-    "typecheck:tsc": "tsc -b",
+    "typecheck": "tsc -b",
     "test": "bun test --timeout 30000",
-    "dev": "bun run script/dev.ts",
-    "migration": "bun run script/migration.ts",
-    "build": "bun run script/build.ts",
-    "pack": "bun run script/pack.ts",
+    "dev": "bun ./scripts/dev.ts",
+    "migration": "bun ./scripts/migration.ts",
+    "prebuild": "bun ./scripts/prebuild.ts",
+    "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "bench:startup": "bun run script/bench-startup.ts"
+    "package": "electron-builder --config electron-builder.config.ts",
+    "package:mac": "electron-builder --mac --config electron-builder.config.ts",
+    "package:win": "electron-builder --win --config electron-builder.config.ts",
+    "package:linux": "electron-builder --linux --config electron-builder.config.ts",
+    "bench:startup": "bun ./scripts/bench-startup.ts"
   },
   "main": "./out/main/index.js",
   "dependencies": {
@@ -33,12 +36,12 @@
     "@effect/platform-node": "catalog:",
     "@lydell/node-pty": "catalog:",
     "@opencode/app": "workspace:*",
-    "@opencode/gui-plugins": "workspace:*",
-    "@opencode/plugin": "workspace:*",
+    "@opencode/gui-extensions": "workspace:*",
     "@opencode/client": "workspace:*",
     "@opencode/schema": "workspace:*",
     "@opencode/ui": "workspace:*",
     "@sentry/solid": "catalog:",
+    "@sentry/vite-plugin": "catalog:",
     "@solidjs/router": "catalog:",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
@@ -50,11 +53,10 @@
     "electron": "44.9.1",
     "electron-builder": "26.15.7",
     "electron-vite": "6.0.0-beta.1",
-    "htmlparser2": "8.0.2",
     "magic-string": "0.30.21",
     "solid-js": "catalog:",
     "typescript": "catalog:",
-    "vite": "8.2.4"
+    "vite": "8.2.2"
   },
   "optionalDependencies": {
     "@lydell/node-pty-darwin-arm64": "1.2.0-beta.12",

@@ -50,7 +50,7 @@ function knownThemes() {
 }
 
 const names: Record<string, string> = {
-  "oc-2": "OpenCode",
+  "oc-2": "OpenCode Student",
   amoled: "AMOLED",
   aura: "Aura",
   ayu: "Ayu",
@@ -144,6 +144,15 @@ function getSystemMode(): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
 }
 
+// A desktop window that composites the real desktop behind it must not paint an opaque floor, or
+// the wallpaper the glass refracts would be hidden. The main process hands that decision to the
+// renderer in the window bootstrap.
+function windowFloor(isDark: boolean) {
+  const electron = (window as { electron?: { bootstrap?: { transparent?: boolean } } }).electron
+
+  return electron?.bootstrap?.transparent ? "transparent" : isDark ? "#080808" : "#fafafa"
+}
+
 function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "dark") {
   const isDark = mode === "dark"
   const variant = isDark ? theme.dark : theme.light
@@ -166,7 +175,7 @@ function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "da
   ensureThemeStyleElement().textContent = fullCss
   document.documentElement.dataset.theme = themeId
   document.documentElement.dataset.colorScheme = mode
-  document.documentElement.style.backgroundColor = isDark ? "#080808" : "#fafafa"
+  document.documentElement.style.backgroundColor = windowFloor(isDark)
 
   // Update theme-color meta tag to match light/dark mode
   const meta = document.querySelector('meta[name="theme-color"]')

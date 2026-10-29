@@ -128,10 +128,6 @@ export function scrollOffsetFromThumbPointer(input: {
   return progress * Math.max(0, input.scrollSize - (input.scrollClientSize ?? input.clientSize))
 }
 
-/**
- * A scroll container that draws its own thumb, for a thumb in an external track or one corrected for virtualized
- * rows. Everything else scrolls with a plain `overflow: auto` element, which `styles/scrollbar.css` already styles.
- */
 export function ScrollView(props: ScrollViewProps) {
   const i18n = useI18n()
   const merged = mergeProps({ orientation: "vertical", thumbVisibility: "hover" }, props)
@@ -401,7 +397,8 @@ export function ScrollView(props: ScrollViewProps) {
 
   // Keybinds implementation
   // We ensure the viewport has a tabindex so it can receive focus
-  // Keyboard scrolling jumps immediately, like the wheel, instead of animating.
+  // We can also explicitly catch PageUp/Down if we want smooth scroll or specific behavior,
+  // but native usually handles this perfectly. Let's explicitly ensure it behaves well.
   const onKeyDown = (e: KeyboardEvent) => {
     // If user is focused on an input inside the scroll view, don't hijack keys
     if (document.activeElement && ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) {
@@ -437,27 +434,27 @@ export function ScrollView(props: ScrollViewProps) {
     switch (next) {
       case "page-down":
         e.preventDefault()
-        viewportRef.scrollBy({ top: scrollAmount })
+        viewportRef.scrollBy({ top: scrollAmount, behavior: "smooth" })
         break
       case "page-up":
         e.preventDefault()
-        viewportRef.scrollBy({ top: -scrollAmount })
+        viewportRef.scrollBy({ top: -scrollAmount, behavior: "smooth" })
         break
       case "home":
         e.preventDefault()
-        viewportRef.scrollTo({ top: 0 })
+        viewportRef.scrollTo({ top: 0, behavior: "smooth" })
         break
       case "end":
         e.preventDefault()
-        viewportRef.scrollTo({ top: viewportRef.scrollHeight })
+        viewportRef.scrollTo({ top: viewportRef.scrollHeight, behavior: "smooth" })
         break
       case "up":
         e.preventDefault()
-        viewportRef.scrollBy({ top: -lineAmount })
+        viewportRef.scrollBy({ top: -lineAmount, behavior: "smooth" })
         break
       case "down":
         e.preventDefault()
-        viewportRef.scrollBy({ top: lineAmount })
+        viewportRef.scrollBy({ top: lineAmount, behavior: "smooth" })
         break
     }
   }
@@ -487,17 +484,13 @@ export function ScrollView(props: ScrollViewProps) {
 
           if (typeof events.onScroll === "function") events.onScroll(e as any)
         }}
-        // Passive so the compositor never waits on the main thread to scroll; onWheel cannot cancel.
-        on:wheel={{
-          passive: true,
-          handleEvent: (e) => {
-            markScrolling()
-            const handler = events.onWheel
+        onWheel={(e) => {
+          markScrolling()
+          const handler = events.onWheel
 
-            if (typeof handler === "function") handler(e as any)
+          if (typeof handler === "function") handler(e as any)
 
-            if (Array.isArray(handler)) handler[0](handler[1], e as any)
-          },
+          if (Array.isArray(handler)) handler[0](handler[1], e as any)
         }}
         onTouchStart={events.onTouchStart as any}
         onTouchMove={events.onTouchMove as any}

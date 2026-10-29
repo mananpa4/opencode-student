@@ -14,7 +14,7 @@ import {
   type ContentPart,
   type FinishReason,
   type LanguageModel,
-} from "../src/effect.js"
+} from "../src/index.js"
 import { LLMClient } from "../src/route.js"
 import { Tool } from "../src/tool.js"
 

@@ -10,15 +10,17 @@ import { FileSystemSearch } from "./filesystem/search.js"
 import { Entry, FileSystem, FindInput, Write } from "@opencode/schema/filesystem"
 export { Entry, Match, Submatch } from "@opencode/schema/filesystem"
 
-export interface ReadInput {
-  readonly path: RelativePath
-}
+export const ReadInput = Schema.Struct({
+  path: RelativePath,
+})
+export type ReadInput = typeof ReadInput.Type
 
-export interface WriteInput {
+export const WriteInput = Schema.Struct({
   /** Absolute, or relative to the location directory. */
-  readonly path: string
-  readonly data: Uint8Array
-}
+  path: Schema.String,
+  data: Schema.Uint8Array,
+})
+export type WriteInput = typeof WriteInput.Type
 
 export class NotFoundError extends Schema.TaggedError<NotFoundError>()("FileSystem.NotFoundError", {
   path: RelativePath,
@@ -57,9 +59,10 @@ export const Content = Schema.Struct({
 }).annotate({ identifier: "FileSystem.Content" })
 export type Content = typeof Content.Type
 
-export interface ListInput {
-  readonly path?: string
-}
+export const ListInput = Schema.Struct({
+  path: Schema.String.pipe(Schema.optional),
+})
+export type ListInput = typeof ListInput.Type
 
 export { FindInput, Write }
 

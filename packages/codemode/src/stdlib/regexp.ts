@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import type { Builtins } from "../interpreter/intrinsics.js"
 import { constructor, type Method, methods, prototypeFrom, receiver } from "../interpreter/native.js"
 import { syntaxError, typeError } from "../interpreter/model.js"
@@ -82,11 +83,11 @@ export const constructRegExp = (builtins: Builtins, args: Array<Value>, proto: O
 export const regexpGlobal = <R>(ctx: Interpreter<R>) => {
   const builtins = ctx.builtins
   const proto = builtins.RegExp
-  const regexp = constructor(builtins, proto, {
+  const regexp = constructor<R>(builtins, proto, {
     name: "RegExp",
     length: 2,
-    call: (_, args) => constructRegExp(builtins, args),
-    construct: (args, newTarget) => constructRegExp(builtins, args, prototypeFrom(newTarget, proto)),
+    call: (_, args) => Effect.sync(() => constructRegExp(builtins, args)),
+    construct: (args, newTarget) => Effect.sync(() => constructRegExp(builtins, args, prototypeFrom(newTarget, proto))),
   })
   methods(builtins, regexp, [
     [

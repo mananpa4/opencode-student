@@ -29,36 +29,35 @@ import {
   type Media,
   type ToolDefinition,
   type UsageInput,
-} from "@opencode/ai/effect"
-import { Auth, Endpoint, ProviderShared, RequestExecutor, type AnyRoute, type HttpMiddleware } from "@opencode/ai/route"
-import { isRecord } from "@opencode/util/record"
-import { Cause, Context, Effect, Layer, Option, Schema, Scope, Stream, Struct } from "effect"
+} from "@opencode/ai"
+import { Auth, Endpoint, RequestExecutor, type AnyRoute, type HttpMiddleware } from "@opencode/ai/route"
+import { ProviderShared } from "@opencode/ai/protocols/shared"
+import { Cause, Context, Effect, Layer, Option, Schema, Scope, Stream } from "effect"
 import { makeParser } from "effect/encoding/Sse"
 import { HttpClientRequest, HttpClientResponse } from "effect/http"
 import { AsyncLocalStorage } from "node:async_hooks"
 import type { ID, RuntimeInfo } from "./model.js"
 import { Provider } from "./provider.js"
 import { State } from "./state.js"
-import { stringify } from "./tool/runtime.js"
 
 type SDK = any
 type UserContent = Extract<LanguageModelV3Message, { role: "user" }>["content"]
 type AssistantContent = Extract<LanguageModelV3Message, { role: "assistant" }>["content"]
 type ToolResultContent = Extract<AssistantContent[number], { type: "tool-result" }>
 
-const decodeJsonRecord = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json)))
+const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 export interface SDKEvent {
   readonly model: RuntimeInfo
   readonly package: string
-  readonly options: Record<string, unknown>
+  readonly options: Record<string, any>
   sdk?: SDK
 }
 
 export interface LanguageEvent {
   readonly model: RuntimeInfo
   readonly sdk: SDK
-  readonly options: Record<string, unknown>
+  readonly options: Record<string, any>
   language?: LanguageModelV3
 }
 
@@ -121,16 +120,19 @@ function wrapSSE(res: Response, ms: number, ctl: AbortController) {
 
 function prepareOptions(model: RuntimeInfo, pkg: string) {
   const projected = mapBodyToProviderOptions(model, pkg)
-  const settings = model.settings ?? {}
-  const options: Record<string, unknown> = {
+  const options: Record<string, any> = {
     name: model.canonical ?? model.providerID,
-    ...Provider.nativeSettings(settings),
+    ...(model.settings ?? {}),
     headers: model.headers,
     body: projected.body,
   }
 
-  const customFetch = settings.fetch
-  const timeouts = Provider.timeouts(settings)
+  const customFetch = options.fetch
+  const timeouts = Provider.timeouts(options)
+  delete options.headerTimeout
+  delete options.chunkTimeout
+  delete options.compaction
+  delete options.transport
   options.fetch = async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const opts = { ...(init ?? {}) }
     // A plain AbortSignal.timeout would keep running into the body stream, so the header limit uses
@@ -151,13 +153,13 @@ function prepareOptions(model: RuntimeInfo, pkg: string) {
     )
 
     if (typeof opts.body === "string" && model.body !== undefined) {
-      const decoded = Option.getOrUndefined(decodeJsonRecord(opts.body))
-      if (decoded) {
+      const decoded = Option.getOrUndefined(decodeJson(opts.body))
+      if (Schema.is(Schema.Record(Schema.String, Schema.Json))(decoded)) {
         opts.body = JSON.stringify(Provider.mergeOverlay(decoded, model.body))
       }
     }
 
-    const send: Fetch = isFetch(customFetch) ? customFetch : fetch
+    const send: Fetch = typeof customFetch === "function" ? customFetch : fetch
     const middleware = httpMiddleware.getStore()
     const res = await (
       middleware
@@ -172,8 +174,6 @@ function prepareOptions(model: RuntimeInfo, pkg: string) {
 }
 
 type Fetch = (input: Parameters<typeof fetch>[0], init?: BunFetchRequestInit) => Promise<Response>
-
-const isFetch = (value: unknown): value is Fetch => typeof value === "function"
 
 // HTTP hook middleware is scoped to one model request, but the SDK's fetch is baked into the
 // cached language model, so the active middleware rides along in async context instead.
@@ -420,8 +420,11 @@ function modelFromLanguage(info: RuntimeInfo, language: LanguageModelV3) {
   })
 }
 
-function gatewayProviderOptions(modelID: ID, settings: Readonly<Record<string, JSONValue>>) {
-  const gateway = isRecord(settings.gateway) ? { ...settings.gateway } : undefined
+function gatewayProviderOptions(modelID: ID, settings: Readonly<Record<string, unknown>>) {
+  const gateway =
+    typeof settings.gateway === "object" && settings.gateway !== null && !Array.isArray(settings.gateway)
+      ? Object.fromEntries(Object.entries(settings.gateway))
+      : undefined
   const model = Object.fromEntries(Object.entries(settings).filter(([key]) => key !== "gateway"))
   if (Object.keys(model).length === 0) return gateway === undefined ? undefined : { gateway }
 
@@ -449,16 +452,24 @@ function providerOptionKey(packageName: string | undefined, providerID: Provider
   return providerID
 }
 
-function requestSettings(settings: Provider.Settings | undefined) {
+function requestSettings(settings: Readonly<Record<string, unknown>> | undefined) {
   if (settings === undefined) return undefined
-  // These configure the SDK provider when it is created, not each request.
-  const result = Struct.omit(Provider.nativeSettings(settings), [
-    "accessToken",
-    "apiKey",
-    "authToken",
-    "baseURL",
-    "fetch",
-  ])
+  const result = Object.fromEntries(
+    Object.entries(settings).filter(
+      ([key]) =>
+        ![
+          "apiKey",
+          "authToken",
+          "baseURL",
+          "chunkTimeout",
+          "compaction",
+          "fetch",
+          "headerTimeout",
+          "timeout",
+          "transport",
+        ].includes(key),
+    ),
+  )
   return Object.keys(result).length === 0 ? undefined : result
 }
 
@@ -655,7 +666,7 @@ function toolOutput(result: ToolResultValue) {
   switch (result.type) {
     case "text":
     case "error":
-      return { type: "text" as const, value: stringify(result.value) }
+      return { type: "text" as const, value: messageValue(result.value) }
     case "content":
       return {
         type: "content" as const,
@@ -913,7 +924,16 @@ function jsonValue(input: unknown): JSONValue {
     const encoded = JSON.stringify(input)
     return encoded === undefined ? null : (JSON.parse(encoded) as JSONValue)
   } catch {
-    return stringify(input)
+    return messageValue(input)
+  }
+}
+
+function messageValue(input: unknown) {
+  if (typeof input === "string") return input
+  try {
+    return JSON.stringify(input) ?? String(input)
+  } catch {
+    return String(input)
   }
 }
 

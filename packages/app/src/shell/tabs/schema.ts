@@ -47,17 +47,16 @@ export const Info = Persistence.struct({
 
 export const Infos = Schema.Record(Schema.String, Schema.mutableKey(Info))
 
-// The side region keeps the name it was stored under before plugins.
+// The dock and side regions keep the names they were stored under before extensions.
 export const Regions = Schema.Record(
   Schema.String,
   Schema.mutableKey(
     Persistence.struct({
+      dock: Schema.optional(Schema.Boolean),
       side: Schema.optional(Schema.Boolean),
+      dockHeight: Schema.optional(Schema.Finite),
       sessionWidth: Schema.optional(Schema.Finite),
-      bottom: Schema.optional(Schema.Boolean),
-      bottomHeight: Schema.optional(Schema.Finite),
-      splitRatio: Schema.optional(Schema.Finite),
-    }).pipe(Schema.encodeKeys({ side: "review" })),
+    }).pipe(Schema.encodeKeys({ dock: "terminal", side: "review", dockHeight: "terminalHeight" })),
   ),
 )
 

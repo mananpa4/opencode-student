@@ -4,7 +4,7 @@ import {
   DESKTOP_MENU,
   desktopMenuKey,
   desktopMenuVisible,
-  desktopMenuWithPlugins,
+  desktopMenuWithExtensions,
   type DesktopMenu,
   type DesktopMenuEntry,
   type DesktopMenuRole,
@@ -23,7 +23,7 @@ type Deps = {
   relaunch: () => void
 }
 
-/** A GUI plugin's contribution to the native menu, already translated by the plugin. */
+/** A GUI extension's contribution to the native menu, already translated by the extension. */
 export type MenubarEntry = {
   readonly menu: string
   readonly id: string
@@ -85,14 +85,15 @@ export function sendMenuCommand(win: BrowserWindow, id: string) {
 function nativeMenu(menu: DesktopMenu, extra: readonly MenubarEntry[], deps: Deps): MenuItemConstructorOptions {
   if (menu.role && !extra.length) return { role: nativeRole(menu.role), label: nativeT(menu.labelKey) }
 
-  const items = desktopMenuWithPlugins(
+  const items = desktopMenuWithExtensions(
     (menu.items ?? [])
       .filter((entry) => desktopMenuVisible(entry, "macos"))
       .map((entry) => ({ key: desktopMenuKey(entry), entry })),
     extra,
   )
 
-  const options: MenuItemConstructorOptions = {
+  return {
+    ...(menu.role ? { role: nativeRole(menu.role) } : {}),
     label: nativeT(menu.labelKey),
     submenu: items.map((item) => {
       const entry = item.entry
@@ -103,21 +104,12 @@ function nativeMenu(menu: DesktopMenu, extra: readonly MenubarEntry[], deps: Dep
       return nativeItem(entry, deps)
     }),
   }
-
-  if (menu.role) options.role = nativeRole(menu.role)
-
-  return options
 }
 
 function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOptions {
   if (entry.type === "separator") return { type: "separator" }
 
-  if (entry.role)
-    return {
-      role: nativeRole(entry.role),
-      label: entry.labelKey ? nativeT(entry.labelKey) : undefined,
-      accelerator: entry.accelerator?.macos,
-    }
+  if (entry.role) return { role: nativeRole(entry.role), label: entry.labelKey ? nativeT(entry.labelKey) : undefined }
 
   const item: MenuItemConstructorOptions = {
     label: entry.labelKey ? nativeT(entry.labelKey) : undefined,
@@ -147,6 +139,6 @@ function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOpt
   return item
 }
 
-function nativeRole(role: DesktopMenuRole): NonNullable<MenuItemConstructorOptions["role"]> {
-  return role
+function nativeRole(role: DesktopMenuRole) {
+  return role as NonNullable<MenuItemConstructorOptions["role"]>
 }

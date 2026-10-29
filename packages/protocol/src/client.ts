@@ -37,6 +37,7 @@ export const groupNames = {
   "server.server": "server",
   "server.debug": "debug",
   "server.migration": "migration",
+  "server.database": "database",
   "server.location": "location",
   "server.agent": "agent",
   "server.plugin": "plugin",
@@ -48,7 +49,6 @@ export const groupNames = {
   "server.provider": "provider",
   "server.integration": "integration",
   "server.websearch": "websearch",
-  "server.usage": "usage",
   "server.credential": "credential",
   "server.form": "form",
   "server.permission": "permission",
@@ -68,18 +68,5 @@ export const groupNames = {
   "server.config": "config",
 } as const
 
-export const promiseOmitEndpoints = new Set([
-  "pty.connect",
-  "persistentPty.connect",
-  "mcp.client",
-  "generate.textLegacy",
-])
-export const effectOmitEndpoints = new Set([
-  "fs.read",
-  "fs.write",
-  "media.get",
-  "pty.connect",
-  "persistentPty.connect",
-  "mcp.client",
-  "generate.textLegacy",
-])
+export const promiseOmitEndpoints = new Set(["pty.connect", "persistentPty.connect"])
+export const effectOmitEndpoints = new Set(["fs.read", "fs.write", "pty.connect", "persistentPty.connect"])

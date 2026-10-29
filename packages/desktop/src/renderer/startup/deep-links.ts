@@ -7,7 +7,8 @@ export function startDeepLinks(api: ElectronAPI) {
   api.onDeepLink(emitDeepLinks)
 }
 
-function emitDeepLinks(urls: string[]) {
+/** Publishes deep links for the app to consume, whether they arrived from the OS or from the tray. */
+export function emitDeepLinks(urls: string[]) {
   if (urls.length === 0) return
   window.__OPENCODE__ ??= {}
   window.__OPENCODE__.deepLinks = [...(window.__OPENCODE__.deepLinks ?? []), ...urls]

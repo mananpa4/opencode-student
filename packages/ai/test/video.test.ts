@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, Fiber, Layer, Stream } from "effect"
 import * as TestClock from "effect/testing/TestClock"
-import { Media, Video, VideoClient, type GenerationEvent, type VideoEvent } from "../src/effect.js"
+import { Media, Video, VideoClient, type GenerationEvent, type VideoEvent } from "../src/index.js"
 import { Fal, Google, Runway, XAI } from "../src/providers.js"
 import { it } from "./lib/effect.js"
 import { dynamicResponse, json, observe, settle, type Call, type HandlerInput } from "./lib/http.js"
@@ -38,7 +38,7 @@ describe("Video / Google Veo", () => {
           },
           references: [Media.bytes(Uint8Array.from([7, 8, 9]), "image/png")],
           durationSeconds: 8,
-          aspect: "16:9",
+          aspectRatio: "16:9",
           resolution: "1080p",
           negativePrompt: "text, watermark",
           seed: 42,
@@ -61,8 +61,15 @@ describe("Video / Google Veo", () => {
         expect(response.video.headers).toEqual({ "x-goog-api-key": "test" })
         expect(JSON.stringify(response.video)).not.toContain("x-goog-api-key")
         expect(Media.from(response.video.source).headers).toBeUndefined()
+        expect(response.notices).toEqual([
+          {
+            type: "filtered",
+            message: "Google Veo filtered media: audio filtered",
+            providerMetadata: { google: { raiMediaFilteredReason: "audio filtered" } },
+          },
+        ])
         expect(response.providerMetadata).toEqual({
-          google: { operation, raiMediaFilteredCount: 1, raiMediaFilteredReasons: ["audio filtered"], metadata: undefined },
+          google: { operation, raiMediaFilteredCount: 1, metadata: undefined },
         })
         expect(yield* response.video.bytes()).toEqual(Uint8Array.from([9, 9, 9]))
       })
@@ -255,7 +262,7 @@ describe("Video / xAI", () => {
           },
           references: [Media.ref("xai", "file_1")],
           durationSeconds: 10,
-          aspect: "16:9",
+          aspectRatio: "16:9",
           resolution: "720p",
           audio: false,
           providerOptions: { reference_audios: [{ voice_id: "eve" }], future_option: true },
@@ -307,9 +314,8 @@ describe("Video / xAI", () => {
       ])
       expect(response.video.source).toEqual({ type: "url", url: "https://vidgen.x.ai/out.mp4", mediaType: "video/mp4" })
       expect(response.video.info).toEqual({ durationSeconds: 10 })
-      expect(response.providerMetadata).toEqual({
-        xai: { requestId: "req_1", model: "grok-imagine-video-1.5", respectModeration: true },
-      })
+      expect(response.notices).toBeUndefined()
+      expect(response.providerMetadata).toEqual({ xai: { requestId: "req_1", model: "grok-imagine-video-1.5" } })
     }),
   )
 
@@ -387,7 +393,7 @@ describe("Video / xAI", () => {
     )
   }
 
-  it.effect("returns moderated results and fails withheld videos as a content policy failure", () =>
+  it.effect("flags moderated results as a notice and withheld videos as a content policy failure", () =>
     Effect.gen(function* () {
       const flagged = yield* Video.generate({ model, prompt: "x" }).pipe(
         Effect.provide(
@@ -403,7 +409,9 @@ describe("Video / xAI", () => {
           ),
         ),
       )
-      expect(flagged.providerMetadata).toEqual({ xai: { requestId: "req_1", respectModeration: false } })
+      expect(flagged.notices).toEqual([
+        { type: "moderated", message: "xAI Video flagged the generated video for moderation" },
+      ])
       const withheld = yield* Video.generate({ model, prompt: "x" }).pipe(
         Effect.flip,
         Effect.provide(
@@ -469,7 +477,7 @@ describe("Video / fal", () => {
           frames: { first: Media.url("https://example.test/first.png") },
           negativePrompt: "blur",
           seed: 7,
-          aspect: "9:16",
+          aspectRatio: "9:16",
           resolution: "1080p",
           audio: true,
           providerOptions: { duration: "8s", safety_tolerance: "4" },
@@ -656,7 +664,7 @@ describe("Video / Runway", () => {
             first: Media.url("https://example.test/first.png"),
             last: Media.ref("runway", "runway://upload-token"),
           },
-          aspect: "1280:720",
+          aspectRatio: "1280:720",
           durationSeconds: 5,
           seed: 3,
           audio: true,

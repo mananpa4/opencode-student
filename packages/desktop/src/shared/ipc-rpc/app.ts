@@ -58,6 +58,11 @@ export const AppSetNativeTranslations = Rpc.make("AppSetNativeTranslations", {
   payload: { value: Schema.Unknown },
 })
 
+// The renderer owns project order, so it pushes the list the tray's quick links show.
+export const AppSetTrayProjects = Rpc.make("AppSetTrayProjects", {
+  payload: { projects: Schema.Array(Schema.Struct({ name: Schema.String, directory: Schema.String })) },
+})
+
 export const AppRelaunch = Rpc.make("AppRelaunch")
 
 export const AppRpcs = RpcGroup.make(
@@ -73,5 +78,6 @@ export const AppRpcs = RpcGroup.make(
   AppSetForceFocus,
   AppRecordFatalRendererError,
   AppSetNativeTranslations,
+  AppSetTrayProjects,
   AppRelaunch,
 )

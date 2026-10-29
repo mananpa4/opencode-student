@@ -4,7 +4,6 @@ import { extend, useRenderer } from "@opentui/solid"
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { useClient } from "../context/client"
 import { Keymap } from "../context/keymap"
-import { useSessionTerminals } from "../context/session-terminals"
 import { useTheme, useThemes } from "../context/theme"
 import { errorMessage } from "../util/error"
 
@@ -36,7 +35,6 @@ export function TerminalPane(props: {
   const theme = useTheme()
   const themes = useThemes()
   const renderer = useRenderer()
-  const terminals = useSessionTerminals()
   const [failure, setFailure] = createSignal<string>()
   const attachmentID = crypto.randomUUID()
   const stream: StreamItem[] = []
@@ -91,8 +89,6 @@ export function TerminalPane(props: {
     }
     if (size) send(interactionFrame(size, data))
   }
-
-  onCleanup(terminals.attachWriter(props.ptyID, sendInput))
 
   const processStream = () => {
     if (disposed || !terminal || !sameSize(canonicalSize, terminalSize)) return

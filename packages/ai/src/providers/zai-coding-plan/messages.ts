@@ -3,9 +3,9 @@ import { ZAICodingPlan } from "../zai-coding-plan.js"
 
 export type Settings = ZAICodingPlan.Settings<ZAICodingPlan.MessagesOptionsInput>
 
-export const model: ProviderPackage.Model<Settings, ZAICodingPlan.MessagesOptionsInput> = (
+export const model: ProviderPackage.Definition<Settings, ZAICodingPlan.MessagesOptionsInput>["model"] = (
   modelID,
-  { apiKey, baseURL, body, headers, ...providerOptions }: Settings = {},
+  { apiKey, baseURL, body, headers, ...providerOptions },
 ) =>
   ZAICodingPlan.configure({
     apiKey,

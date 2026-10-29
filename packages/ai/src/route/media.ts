@@ -16,8 +16,6 @@ import {
   ProviderID,
   UnsupportedOperationError,
   mergeHttpOptions,
-  mergeProviderOptions,
-  type ProviderOptions,
 } from "../schema/index.js"
 import { encodeJson } from "../utils/json.js"
 import { sanitizeSurrogates } from "../utils/sanitize.js"
@@ -26,13 +24,7 @@ export type Execute = Interface["execute"]
 
 /** The minimum a media request must carry for the route to build a transport request. */
 export interface MediaRequest {
-  readonly model: {
-    readonly id: string
-    readonly provider: ProviderID
-    readonly http?: HttpOptions
-    readonly providerOptions?: ProviderOptions
-  }
-  readonly providerOptions?: ProviderOptions
+  readonly model: { readonly id: string; readonly provider: ProviderID; readonly http?: HttpOptions }
   readonly http?: HttpOptions
 }
 
@@ -43,8 +35,6 @@ export interface ModelInput {
   readonly baseURL?: string
   readonly headers?: Record<string, string>
   readonly http?: HttpOptions
-  /** Defaults under each request's `providerOptions`. */
-  readonly providerOptions?: ProviderOptions
 }
 
 /** A provider facade's `configure(...)` input as the `ModelInput` every media selector shares, minus the model id. */
@@ -365,7 +355,6 @@ const makeTransport = <Request extends MediaRequest>(
     ) {
       yield* rejectUnsupported(input.protocol.id, input.protocol.provider, request, protocol.unsupported)
       const http = mergeHttpOptions(routeHttp, request.model.http, request.http)
-      const providerOptions = mergeProviderOptions(request.model.providerOptions, request.providerOptions)
       const headers = Headers.fromInput(http?.headers)
       const prepared =
         protocol.prepare === undefined
@@ -376,10 +365,7 @@ const makeTransport = <Request extends MediaRequest>(
               ),
             )
       // Sanitize after merging so model-level overlays are covered; the model value is restored, not sanitized.
-      const resolved: Request = {
-        ...sanitizeSurrogates({ ...prepared, http, providerOptions }),
-        model: request.model,
-      }
+      const resolved: Request = { ...sanitizeSurrogates({ ...prepared, http }), model: request.model }
       const body = yield* protocol.from(resolved)
       const url = withQuery(
         withQuery(

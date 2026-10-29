@@ -4,12 +4,6 @@ const STREAM_MARKER_PATTERN = "stream-(\\d+)"
 
 const STREAM_FRAGMENT_COUNT = 18
 
-declare global {
-  interface Window {
-    __timelineStreamBenchmark?: TimelineProbeState
-  }
-}
-
 type TimelineProbeState = {
   started: number
   ended: number
@@ -132,19 +126,18 @@ export async function installTimelineStreamProbe(
         start: () => {},
       }
 
-      window.__timelineStreamBenchmark = state
+      ;(window as Window & { __timelineStreamBenchmark?: TimelineProbeState }).__timelineStreamBenchmark = state
       const scrollTo = Element.prototype.scrollTo
-      const scrollToPoint: (this: Element, x: number, y: number) => void = scrollTo
-      const scrollToOptions: (this: Element, options?: ScrollToOptions) => void = scrollTo
       const scrollTop = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop")!
 
       if (profileVisual) {
-        // The two `scrollTo` overloads differ by arity: `(options?)` or `(x, y)`.
-        function measuredScrollTo(this: Element, ...args: [options?: ScrollToOptions] | [x: number, y: number]) {
+        function measuredScrollTo(this: Element, options?: ScrollToOptions): void
+        function measuredScrollTo(this: Element, x: number, y: number): void
+        function measuredScrollTo(this: Element, first?: number | ScrollToOptions, second?: number) {
           state.scroll.calls += 1
-          const top = args.length === 2 ? args[1] : args[0]?.top
+          const top = typeof first === "object" ? first?.top : second
 
-          if (top !== undefined) {
+          if (typeof top === "number") {
             const target = Math.min(top, this.scrollHeight - this.clientHeight)
 
             if (Math.abs(this.scrollTop - target) < 1) state.scroll.callNoops += 1
@@ -152,9 +145,7 @@ export async function installTimelineStreamProbe(
 
           if (state.scroll.lastCallFrame === state.scroll.frame) state.scroll.sameFrameCalls += 1
           state.scroll.lastCallFrame = state.scroll.frame
-
-          if (args.length === 2) scrollToPoint.call(this, args[0], args[1])
-          else scrollToOptions.call(this, args[0])
+          scrollTo.apply(this, typeof first === "number" ? [first, second] : [first])
         }
 
         Element.prototype.scrollTo = measuredScrollTo
@@ -173,9 +164,9 @@ export async function installTimelineStreamProbe(
       const recordLongTasks = (entries: PerformanceEntry[]) => {
         if (!state.running) return
         state.longTasks.push(
-          ...entries.flatMap((entry) =>
-            entry.startTime >= state.started && entry.startTime <= state.ended ? [entry.duration] : [],
-          ),
+          ...entries
+            .filter((entry) => entry.startTime >= state.started && entry.startTime <= state.ended)
+            .map((entry) => entry.duration),
         )
       }
 
@@ -185,14 +176,15 @@ export async function installTimelineStreamProbe(
       const recordLayoutShifts = (entries: PerformanceEntry[]) => {
         if (!state.running) return
         state.layoutShifts.push(
-          ...entries.flatMap((entry) => {
-            // SAFETY: this observer only subscribes to "layout-shift" entries, which carry `value` and `hadRecentInput`.
-            const shift = entry as LayoutShiftEntry
+          ...entries
+            .map((entry) => {
+              const shift = entry as LayoutShiftEntry
 
-            if (shift.startTime < state.started || shift.hadRecentInput) return []
+              if (shift.startTime < state.started || shift.hadRecentInput) return
 
-            return [shift.value]
-          }),
+              return shift.value
+            })
+            .filter((value): value is number => value !== undefined),
         )
       }
 
@@ -343,11 +335,8 @@ export async function installTimelineStreamProbe(
 
           if (profileVisual) {
             const visibleRows = [...root.querySelectorAll<HTMLElement>("[data-timeline-key]")]
-              .flatMap((element) => {
-                const rect = element.getBoundingClientRect()
-
-                return rect.bottom > viewport.top && rect.top < viewport.bottom ? [{ element, rect }] : []
-              })
+              .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+              .filter((item) => item.rect.bottom > viewport.top && item.rect.top < viewport.bottom)
               .sort((a, b) => a.rect.top - b.rect.top)
 
             state.visibleRows = new Set(visibleRows.map((item) => item.element))
@@ -437,7 +426,7 @@ export async function installTimelineStreamProbe(
                   : index >= 0
                     ? "stream"
                     : "unknown",
-              tokenSpans: livePart?.querySelectorAll(".highlights span").length ?? 0,
+              tokenSpans: livePart?.querySelectorAll(".shiki span").length ?? 0,
               blocks: livePart?.querySelectorAll("[data-markdown-block]").length ?? 0,
               codeBlocks: livePart?.querySelectorAll('[data-component="markdown-code"]').length ?? 0,
               height: livePart?.getBoundingClientRect().height ?? 0,
@@ -462,7 +451,7 @@ export async function installTimelineStreamProbe(
 
 export function startTimelineStreamProbe(page: Page) {
   return page.evaluate(() => {
-    const state = window.__timelineStreamBenchmark
+    const state = (window as Window & { __timelineStreamBenchmark?: TimelineProbeState }).__timelineStreamBenchmark
 
     if (!state) throw new Error("missing streaming benchmark state")
     state.start()
@@ -504,7 +493,7 @@ export async function collectTimelineStreamMetrics(
   options: { textPartID: string; finalIndex: number; navigations: string[] },
 ) {
   return page.evaluate(({ textPartID, finalIndex, navigations }) => {
-    const state = window.__timelineStreamBenchmark
+    const state = (window as Window & { __timelineStreamBenchmark?: TimelineProbeState }).__timelineStreamBenchmark
 
     if (!state) throw new Error(`missing streaming benchmark state after navigation: ${JSON.stringify(navigations)}`)
     state.ended = performance.now()

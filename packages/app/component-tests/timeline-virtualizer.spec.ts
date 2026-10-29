@@ -1,4 +1,4 @@
-import { expect, sourceURL, story } from "../../stories/playwright/story"
+import { expect, sourceURL, story } from "../../storybook/playwright/story"
 
 const fixture = sourceURL(new URL("./timeline-virtualizer.fixture.tsx", import.meta.url))
 
@@ -56,8 +56,8 @@ story("bounds the cheap suffix and reveals only ready measured rows", async ({ p
 })
 
 for (const input of [
-  { name: "offset-only", count: 1, rowHeight: 600, reveal: { scrollTop: 0 } },
-  { name: "zero-height", count: 4, rowHeight: 60, reveal: {} },
+  { name: "offset-only", count: 1, rowHeight: 600 },
+  { name: "zero-height", count: 4, rowHeight: 60 },
 ]) {
   story(`reveals ready measured rows after an ${input.name} reconnect`, async ({ page }) => {
     await page.evaluate(
@@ -74,8 +74,7 @@ for (const input of [
     await expect(content.locator("[data-timeline-key]")).toHaveCount(1)
 
     if (input.name === "offset-only") {
-      // Pinned to the end: the 600px row and the virtualizer's 82px tail, less the 180px viewport.
-      await expect(root).toHaveAttribute("data-last-scroll-top", "502")
+      await expect(root).toHaveAttribute("data-last-scroll-top", "484")
       await root.locator("[data-scrollable]").dispatchEvent("wheel", { deltaY: -1 })
       await expect(root.getByTestId("timeline-controls")).toHaveAttribute("data-pinned", "false")
     }
@@ -97,7 +96,7 @@ for (const input of [
       pendingMarkdown: 0,
       clipped: [],
       viewportHeight: 180,
-      ...input.reveal,
+      ...(input.name === "offset-only" ? { scrollTop: 0 } : {}),
     })
 
     if (input.name === "offset-only") {

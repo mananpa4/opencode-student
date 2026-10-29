@@ -11,10 +11,10 @@ import { useLanguage } from "@/runtime/i18n/language"
 import { useDialog } from "@opencode/ui/context/dialog"
 import { DialogConnectProvider } from "@/providers/connect/dialog"
 import { decode64 } from "@/runtime/persistence/base64"
+import { SettingsList } from "@/settings/list"
+import { SettingsRow } from "@/settings/row"
 import { consoleModelGroup, ProviderModelSections } from "@/providers/models/provider-group"
 import "@/settings/settings.css"
-import "@/shell/search-list.css"
-import "./manage.css"
 
 type ModelItem = ReturnType<ReturnType<typeof useLocal>["model"]["list"]>[number]
 
@@ -71,29 +71,24 @@ export const DialogManageModels: Component = () => {
   const expanded = (key: string) => searching() || !store.collapsed[key]
 
   function ModelRows(props: { items: ModelItem[] }) {
-    const visible = (item: ModelItem) => local.model.visible({ modelID: item.id, providerID: item.provider.id })
-
     return (
-      <div class="manage-models-rows">
+      <SettingsList variant="catalog">
         <For each={props.items}>
           {(item) => (
-            <div
-              class="search-list-row"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => setModelVisibility(item, !visible(item))}
-            >
-              <div class="search-list-row-text">
-                <span class="search-list-title">{item.name}</span>
-              </div>
-              <div class="search-list-trailing" onClick={(event) => event.stopPropagation()}>
-                <Switch checked={visible(item)} onChange={(checked) => setModelVisibility(item, checked)} hideLabel>
+            <SettingsRow title={item.name} description="">
+              <div>
+                <Switch
+                  checked={local.model.visible({ modelID: item.id, providerID: item.provider.id })}
+                  onChange={(checked) => setModelVisibility(item, checked)}
+                  hideLabel
+                >
                   {item.name}
                 </Switch>
               </div>
-            </div>
+            </SettingsRow>
           )}
         </For>
-      </div>
+      </SettingsList>
     )
   }
 
@@ -109,7 +104,7 @@ export const DialogManageModels: Component = () => {
         </Button>
       </DialogHeader>
       <DialogBody class="flex min-h-0 flex-1 flex-col">
-        <div class="manage-models-search">
+        <div class="px-4 pt-px pb-3">
           <TextInput
             type="search"
             appearance="base"
@@ -130,7 +125,7 @@ export const DialogManageModels: Component = () => {
           />
         </div>
         <div data-slot="manage-models-scroll" class="relative min-h-0 flex-1">
-          <div class="settings-panel settings-models">
+          <div class="settings-panel settings-models h-full px-4 pt-1 pb-4">
             <Show
               when={!list.grouped.loading}
               fallback={

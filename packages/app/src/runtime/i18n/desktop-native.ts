@@ -218,6 +218,10 @@ export function detectDesktopNativeLocale(languages: readonly string[]): Desktop
   return "en"
 }
 
+export function desktopNativePluralCategories(locale: DesktopNativeLocale) {
+  return new Intl.PluralRules(DESKTOP_NATIVE_LOCALE_TAGS[locale]).resolvedOptions().pluralCategories
+}
+
 function locale(value: string) {
   try {
     return new Intl.Locale(value).maximize()
@@ -230,8 +234,7 @@ function locale(value: string) {
 const normalizeScript = (script?: string) => (script === "Aran" ? "Arab" : script)
 
 export const DESKTOP_NATIVE_ENGLISH = {
-  "desktop.microphoneUsage": "OpenCode uses your microphone for voice calls.",
-  "desktop.menu.app": "OpenCode",
+  "desktop.menu.app": "OpenCode Student",
   "desktop.menu.file": "File",
   "desktop.menu.edit": "Edit",
   "desktop.menu.view": "View",
@@ -246,6 +249,13 @@ export const DESKTOP_NATIVE_ENGLISH = {
   "desktop.menu.newSession": "New Session",
   "desktop.menu.openProject": "Open Project…",
   "desktop.menu.newWindow": "New Window",
+  "desktop.tray.open": "Open",
+  "desktop.tray.newSession": "New Session",
+  "desktop.tray.openProject": "Open Project…",
+  "desktop.tray.recentProjects": "Recent Projects",
+  "desktop.tray.noRecentProjects": "No Recent Projects",
+  "desktop.tray.settings": "Settings",
+  "desktop.tray.quit": "Quit OpenCode Student",
   "desktop.menu.closeWindow": "Close Window",
   "desktop.menu.undo": "Undo",
   "desktop.menu.redo": "Redo",
@@ -271,11 +281,11 @@ export const DESKTOP_NATIVE_ENGLISH = {
   "desktop.menu.nextProject": "Next Project",
   "desktop.menu.minimize": "Minimize",
   "desktop.menu.maximize": "Maximize",
-  "desktop.menu.documentation": "OpenCode Documentation",
+  "desktop.menu.documentation": "OpenCode Student Documentation",
   "desktop.menu.supportForum": "Support Forum",
   "desktop.menu.shareFeedback": "Share Feedback",
   "desktop.menu.reportBug": "Report a Bug",
-  "desktop.menu.ariaLabel": "OpenCode menu",
+  "desktop.menu.ariaLabel": "OpenCode Student menu",
 
   "desktop.cli.installed.title": "CLI Installed",
   "desktop.cli.installed.message": "CLI installed to {{path}}\n\nRestart your terminal to use the 'opencode' command.",
@@ -286,9 +296,9 @@ export const DESKTOP_NATIVE_ENGLISH = {
   "desktop.recovery.action.exportLogs": "Export Logs",
   "desktop.recovery.action.keepWaiting": "Keep Waiting",
   "desktop.recovery.action.quit": "Quit",
-  "desktop.recovery.loadFailed": "OpenCode failed to load",
-  "desktop.recovery.terminated": "OpenCode window terminated unexpectedly",
-  "desktop.recovery.unresponsive": "OpenCode is not responding",
+  "desktop.recovery.loadFailed": "OpenCode Student failed to load",
+  "desktop.recovery.terminated": "OpenCode Student window terminated unexpectedly",
+  "desktop.recovery.unresponsive": "OpenCode Student is not responding",
   "desktop.recovery.unresponsive.detail": "You can relaunch the app, open the logs, or keep waiting.",
   "desktop.recovery.loadFailed.detail": "Window: {{window}}\nURL: {{url}}\nError: {{code}} {{description}}",
   "desktop.recovery.terminated.detail": "Window: {{window}}\nReason: {{reason}}\nCode: {{code}}",
@@ -298,6 +308,7 @@ export const DESKTOP_NATIVE_ENGLISH = {
   "desktop.dialog.chooseFile": "Choose a file",
   "desktop.dialog.saveFile": "Save file",
   "desktop.dialog.files": "Files",
+  "desktop.server.local": "Local Server",
   "desktop.onboarding.defaultProject": "Default Project",
 
   "desktop.picker.error.notSelected": "File was not selected by the picker",

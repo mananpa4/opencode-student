@@ -103,20 +103,13 @@ benchmark.describe("performance: review pane scaling", () => {
   }
 })
 
-declare global {
-  interface Window {
-    __reviewSearchStartedAt?: number
-    __reviewPaneScalingProbe?: ReviewPaneScalingProbe
-  }
-}
-
 async function measureBroadReviewSearch(page: Page, expectedRows: number) {
   const filter = page.getByRole("searchbox", { name: "Filter files" })
   await filter.evaluate((element) => {
     element.addEventListener(
       "input",
       () => {
-        window.__reviewSearchStartedAt = performance.now()
+        ;(window as Window & { __reviewSearchStartedAt?: number }).__reviewSearchStartedAt = performance.now()
       },
       { once: true, capture: true },
     )
@@ -124,7 +117,7 @@ async function measureBroadReviewSearch(page: Page, expectedRows: number) {
   await filter.fill("file-")
 
   return page.evaluate((expectedRows) => {
-    const startedAt = window.__reviewSearchStartedAt!
+    const startedAt = (window as Window & { __reviewSearchStartedAt?: number }).__reviewSearchStartedAt!
 
     return new Promise<{ stableMs: number; logicalRows: number; renderedRows: number }>((resolve) => {
       let previous = -1
@@ -208,23 +201,22 @@ async function measureReviewPaneLoad(page: Page, input: { expectedFile: string; 
   await installReviewPaneScalingProbe(page, input)
   await toggle.click()
   await page.waitForFunction(
-    () => window.__reviewPaneScalingProbe?.stableReadyMs !== undefined,
+    () =>
+      (window as Window & { __reviewPaneScalingProbe?: ReviewPaneScalingProbe }).__reviewPaneScalingProbe
+        ?.stableReadyMs !== undefined,
     undefined,
     { timeout: completionTimeoutMs },
   )
 
   return page.evaluate(() => {
-    const probe = window.__reviewPaneScalingProbe!
+    const probe = (window as Window & { __reviewPaneScalingProbe?: ReviewPaneScalingProbe }).__reviewPaneScalingProbe!
     probe.stop()
     const startedAt = probe.startedAt!
     const final = probe.samples.at(-1)!
 
     const resources = performance
       .getEntriesByType("resource")
-      .filter(
-        (entry): entry is PerformanceResourceTiming =>
-          entry instanceof PerformanceResourceTiming && entry.name.includes("/vcs/diff"),
-      )
+      .filter((entry) => entry.name.includes("/vcs/diff")) as PerformanceResourceTiming[]
 
     const resource = resources.at(-1)
 
@@ -284,15 +276,8 @@ async function installReviewPaneScalingProbe(page: Page, input: { expectedFile: 
         if (!running || probe.startedAt === undefined) return
         const panel = document.querySelector<HTMLElement>("#review-panel")
         const tree = panel?.querySelector<HTMLElement>('[data-component="file-tree-v2"]')
-        const shadow = tree?.querySelector("file-tree-container")?.shadowRoot
-
-        const rows = shadow
-          ? shadow.querySelectorAll('[data-type="item"]')
-          : (panel?.querySelectorAll('[data-slot="file-tree-v2-row"]') ?? [])
-
-        const fileRows = shadow
-          ? shadow.querySelectorAll('button[data-type="item"][data-item-type="file"]')
-          : (panel?.querySelectorAll('button[data-slot="file-tree-v2-row"]') ?? [])
+        const rows = panel?.querySelectorAll('[data-slot="file-tree-v2-row"]') ?? []
+        const fileRows = panel?.querySelectorAll('button[data-slot="file-tree-v2-row"]') ?? []
 
         const header =
           panel?.querySelector<HTMLElement>('[data-slot="session-review-v2-file-header"]')?.textContent?.trim() ?? ""
@@ -365,7 +350,7 @@ async function installReviewPaneScalingProbe(page: Page, input: { expectedFile: 
         },
         { capture: true, once: true },
       )
-      window.__reviewPaneScalingProbe = probe
+      ;(window as Window & { __reviewPaneScalingProbe?: ReviewPaneScalingProbe }).__reviewPaneScalingProbe = probe
     },
     { ...input, stableFrames: readyFrames },
   )

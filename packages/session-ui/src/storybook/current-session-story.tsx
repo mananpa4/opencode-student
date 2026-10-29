@@ -9,16 +9,11 @@ import { Button } from "@opencode/ui/button"
 import { Show, createMemo, createSignal, type JSX } from "solid-js"
 import { CURRENT_SESSION_ID, STORY_TIME } from "./current-session-fixtures"
 
-export function CurrentSessionProviders(props: {
-  document: SessionDocument
-  backgroundCompaction?: boolean
-  children: JSX.Element
-}) {
+export function CurrentSessionProviders(props: { document: SessionDocument; children: JSX.Element }) {
   return (
     <DataProvider
       directory="C:/workspaces/opencode"
       sessionID={props.document.sessionID}
-      backgroundCompaction={props.backgroundCompaction}
       data={{
         agent: [
           { name: "build", color: "blue" },
@@ -83,7 +78,6 @@ export function CurrentSessionTimelineStory(props: {
   shellToolDefaultOpen?: boolean
   editToolDefaultOpen?: boolean
   turnDiffs?: boolean
-  backgroundCompaction?: boolean
 }) {
   // Inline story documents rebuild their messages on every prop read, and the timeline projection keys text by identity.
   const document = createMemo(() => props.document)
@@ -95,10 +89,7 @@ export function CurrentSessionTimelineStory(props: {
       setActivity(`Opened ${file.name ?? file.mime}`)
     },
     revert: (input) => {
-      setActivity(`Rewound to ${input.messageID}`)
-    },
-    fork: (input) => {
-      setActivity(`Forked from ${input.messageID}`)
+      setActivity(`Selected revert boundary ${input.messageID}`)
     },
   } satisfies SessionUserActions
 
@@ -122,7 +113,7 @@ export function CurrentSessionTimelineStory(props: {
         <Show when={revision()} keyed>
           {(revision) => (
             <div data-story-revision={revision}>
-              <CurrentSessionProviders document={document()} backgroundCompaction={props.backgroundCompaction}>
+              <CurrentSessionProviders document={document()}>
                 <SessionTimeline
                   document={document()}
                   presentation={props.presentation}

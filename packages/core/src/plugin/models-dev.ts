@@ -96,8 +96,7 @@ function snapshots(data: readonly ModelsDev.Snapshot[]) {
       models: provider.models.filter(
         (model) =>
           model.status !== "deprecated" &&
-          // Non-chat models are kept for lookups; the Model service never offers them for sessions.
-          ((model.type ?? "chat") !== "chat" || Model.supportsText(model)) &&
+          Model.supportsText(model) &&
           !(
             provider.info.id === Provider.ID.amazonBedrock &&
             BEDROCK_PROFILE_ONLY_IDS.includes(model.modelID ?? model.id)

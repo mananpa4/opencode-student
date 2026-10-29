@@ -46,9 +46,9 @@ export const configure = (input: Config = {}) => {
 
 export const provider = configure()
 export const chat = provider.chat
-export const model: ProviderPackage.Model<Settings, ChatOptionsInput> = (
+export const model: ProviderPackage.Definition<Settings, ChatOptionsInput>["model"] = (
   modelID,
-  { apiKey, baseURL, queryParams, body, headers, ...providerOptions }: Settings = {},
+  { apiKey, baseURL, queryParams, body, headers, ...providerOptions },
 ) =>
   configure({
     apiKey,

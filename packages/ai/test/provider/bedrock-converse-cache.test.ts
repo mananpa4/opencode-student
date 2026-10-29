@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
-import { CacheHint, LanguageModel, LLM, Message, ToolCallPart } from "../../src/effect.js"
+import { CacheHint, LanguageModel, LLM, Message, ToolCallPart } from "../../src/index.js"
 import { AmazonBedrock } from "../../src/providers.js"
 import { compileRequest } from "../../src/route/client.js"
 import { it } from "../lib/effect.js"
@@ -32,7 +32,7 @@ describe("Bedrock Converse cache policy", () => {
       it.effect(`omits checkpoints for ${id} (${JSON.stringify(policy)})`, () =>
         Effect.gen(function* () {
           // Exercise both automatic placement and manual hints at every lowering site.
-          const cache = policy === "none" ? new CacheHint({ type: "ephemeral", ttl: "1h" }) : undefined
+          const cache = policy === "none" ? new CacheHint({ type: "ephemeral", ttlSeconds: 3600 }) : undefined
           const prepared = yield* compileRequest(
             LLM.request({
               model: bedrock.model(id),
@@ -84,8 +84,8 @@ describe("Bedrock Converse cache policy", () => {
     ["arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6", "1h"],
     ["arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6", "1h"],
   ] as const) {
-    for (const ttlRequest of [undefined, "1h"] as const) {
-      it.effect(`preserves Claude checkpoints for ${id} (TTL: ${ttlRequest ?? "default"})`, () =>
+    for (const ttlSeconds of [undefined, 3600]) {
+      it.effect(`preserves Claude checkpoints for ${id} (TTL: ${ttlSeconds ?? "default"})`, () =>
         Effect.gen(function* () {
           const prepared = yield* compileRequest(
             LLM.request({
@@ -97,11 +97,11 @@ describe("Bedrock Converse cache policy", () => {
               tools: [{ name: "lookup", description: "Lookup", inputSchema: { type: "object" } }],
               prompt: "Question",
               cache:
-                ttlRequest === undefined ? undefined : { tools: true, system: true, messages: { tail: 1 }, ttl: ttlRequest },
+                ttlSeconds === undefined ? undefined : { tools: true, system: true, messages: { tail: 1 }, ttlSeconds },
             }),
           )
           const marker = {
-            cachePoint: ttlRequest === undefined || ttl === undefined ? { type: "default" } : { type: "default", ttl },
+            cachePoint: ttlSeconds === undefined || ttl === undefined ? { type: "default" } : { type: "default", ttl },
           }
 
           expect(prepared.body).toMatchObject({
@@ -110,7 +110,7 @@ describe("Bedrock Converse cache policy", () => {
             system: [{ text: "Agent" }, marker, { text: "Project" }, marker],
             messages: [{ role: "user", content: [{ text: "Question" }, marker] }],
           })
-          if (ttlRequest === undefined || ttl === undefined)
+          if (ttlSeconds === undefined || ttl === undefined)
             expect(JSON.stringify(prepared.body)).not.toContain('"ttl"')
         }),
       )
@@ -119,9 +119,9 @@ describe("Bedrock Converse cache policy", () => {
 
   const arn = "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123"
 
-  for (const ttlRequest of [undefined, "1h"] as const) {
+  for (const ttlSeconds of [undefined, 3600]) {
     it.effect(
-      `emits checkpoints for an opaque ARN declaring the Anthropic cache format (TTL: ${ttlRequest ?? "default"})`,
+      `emits checkpoints for an opaque ARN declaring the Anthropic cache format (TTL: ${ttlSeconds ?? "default"})`,
       () =>
         Effect.gen(function* () {
           const prepared = yield* compileRequest(
@@ -134,10 +134,10 @@ describe("Bedrock Converse cache policy", () => {
               tools: [{ name: "lookup", description: "Lookup", inputSchema: { type: "object" } }],
               prompt: "Question",
               cache:
-                ttlRequest === undefined ? undefined : { tools: true, system: true, messages: { tail: 1 }, ttl: ttlRequest },
+                ttlSeconds === undefined ? undefined : { tools: true, system: true, messages: { tail: 1 }, ttlSeconds },
             }),
           )
-          const marker = { cachePoint: ttlRequest === undefined ? { type: "default" } : { type: "default", ttl: "1h" } }
+          const marker = { cachePoint: ttlSeconds === undefined ? { type: "default" } : { type: "default", ttl: "1h" } }
 
           expect(prepared.body).toMatchObject({
             modelId: arn,
@@ -145,7 +145,7 @@ describe("Bedrock Converse cache policy", () => {
             system: [{ text: "Agent" }, marker, { text: "Project" }, marker],
             messages: [{ role: "user", content: [{ text: "Question" }, marker] }],
           })
-          if (ttlRequest === undefined) expect(JSON.stringify(prepared.body)).not.toContain('"ttl"')
+          if (ttlSeconds === undefined) expect(JSON.stringify(prepared.body)).not.toContain('"ttl"')
         }),
     )
   }

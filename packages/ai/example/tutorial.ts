@@ -1,8 +1,7 @@
 import { Config, Effect, Formatter, Schema, Stream } from "effect"
-import { HttpClientResponse } from "effect/http"
 import { NodeFileSystem } from "@effect/platform-node"
-import { AIClient, Image, LLM, LLMRequest, Media, Message, ProviderID, Tool, ToolRuntime } from "@opencode/ai/effect"
-import { Route, Auth, Endpoint, Framing, Protocol, RequestExecutor } from "@opencode/ai/route"
+import { AIClient, Image, LLM, LLMRequest, Media, Message, ProviderID, Tool, ToolRuntime } from "@opencode/ai"
+import { Route, Auth, Endpoint, Framing, Protocol } from "@opencode/ai/route"
 import { OpenAI } from "@opencode/ai/providers"
 
 /**
@@ -10,10 +9,7 @@ import { OpenAI } from "@opencode/ai/providers"
  *
  * Run from `packages/ai` with an OpenAI key in the environment:
  *
- *   OPENAI_API_KEY=... bun example/tutorial.ts [example]
- *
- * where `example` is one of the keys of `examples` at the bottom (default
- * `tools`). The `fake` example runs offline and needs no key.
+ *   OPENAI_API_KEY=... bun example/tutorial.ts
  *
  * The file is intentionally written as a normal TypeScript program. You can
  * hover imports and local values to see how the public API is typed.
@@ -192,7 +188,7 @@ const FakeProtocol = Protocol.make<FakeBody, string, string, void>({
     event: Schema.String,
     initial: () => undefined,
     step: (_, frame) => Effect.succeed([undefined, [{ type: "text-delta", id: "text-0", text: frame }]] as const),
-    onHalt: () => Effect.succeed([{ type: "finish", reason: { normalized: "stop" } }]),
+    onHalt: () => [{ type: "finish", reason: { normalized: "stop" } }],
   },
 })
 
@@ -217,24 +213,6 @@ const FakeEcho = {
   }),
 }
 
-// 7. Run the fake provider offline. `RequestExecutor.middleware` sees every HTTP
-// request before it is sent; here it answers with two SSE frames instead of
-// calling the network.
-const fakeExecutor = RequestExecutor.middleware((request) =>
-  Effect.succeed(
-    HttpClientResponse.fromWeb(
-      request,
-      new Response("data: hello\n\ndata: from fake-echo\n\n", { headers: { "content-type": "text/event-stream" } }),
-    ),
-  ),
-)
-
-const generateFake = Effect.gen(function* () {
-  const response = yield* LLM.generate({ model: FakeEcho.configure().model("echo-1"), prompt: "Say hello." })
-  console.log("\n== fake provider ==")
-  console.log("generated text:", response.text)
-})
-
 // 8. Image generation uses the same facade and the same request/generate shape.
 // `response.image` is a `Media.Asset`: bytes decode lazily and are cached, and
 // `Media.write` persists them through the Effect `FileSystem`.
@@ -242,9 +220,9 @@ const generateImage = Effect.gen(function* () {
   const response = yield* Image.generate({
     model: openai.image("gpt-image-1-mini"),
     prompt: "A flat black circle centered on a plain white background.",
-    aspect: "1:1",
-    // Exact pixel sizes and output formats are provider options.
-    providerOptions: { quality: "low", outputFormat: "jpeg" },
+    size: "1024x1024",
+    format: "jpeg",
+    providerOptions: { quality: "low" },
   })
 
   console.log("\n== image ==")
@@ -255,25 +233,17 @@ const generateImage = Effect.gen(function* () {
 })
 
 // Provide every modality client and the HTTP request executor once with
-// `AIClient.layer`; `AIClient.layerWith(executor)` swaps the executor, as the
-// fake example does. One example runs at a time so the tutorial does not spend
-// tokens on every path.
-const examples: Record<string, Effect.Effect<void, unknown, AIClient.Services>> = {
-  generate: generateOnce,
-  stream: streamText,
-  tools: streamWithTools,
-  object: generateStructuredObject,
-  "dynamic-object": generateDynamicObject.pipe(
-    Effect.andThen((response) => Effect.sync(() => console.log(response.object))),
-  ),
-  image: generateImage,
-  fake: generateFake,
-}
+// `AIClient.layer` (`AIClient.layerWith(executor)` swaps the executor). Keep one
+// path enabled at a time so the tutorial can demonstrate generate, stream, or
+// tool-loop behavior without spending tokens on every example.
 
-const name = process.argv[2] ?? "tools"
-if (!Object.hasOwn(examples, name))
-  throw new Error(`Unknown example ${name}; pick one of ${Object.keys(examples).join(", ")}`)
+const program = Effect.gen(function* () {
+  // yield* generateOnce
+  // yield* streamText
+  // yield* generateStructuredObject
+  // yield* generateDynamicObject.pipe(Effect.andThen((response) => Effect.sync(() => console.log(response.object))))
+  // yield* generateImage
+  yield* streamWithTools
+}).pipe(Effect.provide(AIClient.layer))
 
-Effect.runPromise(
-  examples[name].pipe(Effect.provide(name === "fake" ? AIClient.layerWith(fakeExecutor) : AIClient.layer)),
-)
+Effect.runPromise(program)

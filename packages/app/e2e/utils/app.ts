@@ -40,10 +40,9 @@ export type TabSeed =
 
 export type SeedInput = {
   servers?: (string | { url: string; name?: string })[]
-  // Project IDs this client has used, which Home lists. Key `local` is the default server; other keys are origins.
-  usedProjects?: Record<string, string[]>
-  // The directory list builds before the server-backed list kept, which the app migrates to used projects.
-  legacyProjects?: Record<string, { worktree: string; expanded?: boolean }[]>
+  // Key `local` is the default server; other keys are server origins.
+  projects?: Record<string, { worktree: string; expanded?: boolean }[]>
+  lastProject?: Record<string, string>
   // A string is a session ID on the default server.
   tabs?: TabSeed[]
   // Keyed by session ID on the default server.
@@ -92,8 +91,6 @@ export async function seed(page: Page, input: SeedInput) {
 
 function storageEntries(input: SeedInput): [string, string, boolean][] {
   const server = {
-    ...(input.usedProjects ? { usedProjectIDs: input.usedProjects } : {}),
-    ...(input.legacyProjects ? { projects: input.legacyProjects } : {}),
     ...(input.servers
       ? {
           list: input.servers.map((item) =>
@@ -101,6 +98,8 @@ function storageEntries(input: SeedInput): [string, string, boolean][] {
           ),
         }
       : {}),
+    ...(input.projects ? { projects: input.projects } : {}),
+    ...(input.lastProject ? { lastProject: input.lastProject } : {}),
   }
 
   const values: Record<string, unknown> = {
@@ -142,7 +141,7 @@ export function project(input: { id: string; directory: string; name?: string } 
     canonical: directory,
     name: directory.split(/[\\/]/).at(-1),
     vcs: "git",
-    time: { created: T0, updated: T0, active: T0 },
+    time: { created: T0, updated: T0 },
     sandboxes: [] as string[],
     ...rest,
   }

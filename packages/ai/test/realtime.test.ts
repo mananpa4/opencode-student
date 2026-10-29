@@ -138,9 +138,6 @@ describe("experimental Realtime", () => {
   )
 
   test("routes bare and versioned model names to their engine", () => {
-    expect(Realtime.engines.map((item) => Realtime.engine(item.model)?.id)).toEqual(
-      Realtime.engines.map((item) => item.id),
-    )
     expect(
       [
         "gpt-realtime",

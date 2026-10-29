@@ -3,6 +3,8 @@ export * as ConfigCommandPlugin from "./command.js"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Info, type Entry } from "@opencode/schema/config"
 import { ConfigCommand } from "@opencode/schema/config/command"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
 import { AppProcess } from "@opencode/util/process"
 import path from "path"
 import { Effect, Option, PubSub, Schema, Stream } from "effect"
@@ -55,9 +57,11 @@ export const Plugin = define({
       Stream.runForEach(notify),
       Effect.forkScoped({ startImmediately: true }),
     )
-    yield* ctx.event
-      .subscribe({ types: ["config.updated"] })
-      .pipe(Stream.runForEach(notify), Effect.forkScoped({ startImmediately: true }))
+    yield* ctx.event.subscribe().pipe(
+      Stream.filter((event) => event.type === "config.updated"),
+      Stream.runForEach(notify),
+      Effect.forkScoped({ startImmediately: true }),
+    )
     const updates = yield* PubSub.subscribe(changes)
     yield* Stream.fromSubscription(updates).pipe(
       Stream.debounce("100 millis"),
@@ -80,9 +84,11 @@ export const Plugin = define({
                   command.model === undefined
                     ? commandAgent?.model
                     : {
-                        id: command.model.model,
-                        providerID: command.model.providerID,
-                        ...(command.model.variant === undefined ? {} : { variant: command.model.variant }),
+                        id: Model.ID.make(command.model.model),
+                        providerID: Provider.ID.make(command.model.providerID),
+                        ...(command.model.variant === undefined
+                          ? {}
+                          : { variant: Model.VariantID.make(command.model.variant) }),
                       }
                 const text = yield* evaluateTemplate(command.template, input.prompt.text, {
                   location,
@@ -193,14 +199,14 @@ function evaluateTemplate(
     const args = parseArguments(input)
     const placeholders = template.match(placeholderRegex) ?? []
     const last = Math.max(0, ...placeholders.map((item) => Number(item.slice(1))))
-    const withArguments = template.replaceAll(argumentRegex, (match, index) => {
-      if (match === "$ARGUMENTS") return input
+    const expanded = template.replaceAll(placeholderRegex, (_, index) => {
       const position = Number(index)
       const argIndex = position - 1
       if (argIndex >= args.length) return ""
       if (position === last) return args.slice(argIndex).join(" ")
       return args[argIndex]
     })
+    const withArguments = expanded.replaceAll("$ARGUMENTS", () => input)
     const text =
       placeholders.length === 0 && !template.includes("$ARGUMENTS") && input.trim()
         ? `${withArguments}\n\n${input}`.trim()
@@ -239,7 +245,6 @@ function parseArguments(input: string) {
 }
 
 const argsRegex = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
-const placeholderRegex = /\$([1-9]\d*)/g
-const argumentRegex = /\$(?:ARGUMENTS|([1-9]\d*))/g
+const placeholderRegex = /\$(\d+)/g
 const quoteTrimRegex = /^["']|["']$/g
 const shellRegex = /!`([^`]+)`/g

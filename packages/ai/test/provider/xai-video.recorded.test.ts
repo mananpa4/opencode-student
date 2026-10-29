@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect, Stream } from "effect"
-import { Video } from "../../src/effect.js"
+import { Video } from "../../src/index.js"
 import { XAI } from "../../src/providers.js"
 import { recordedTests } from "../recorded-test.js"
 import { queuedPoll } from "./queued-recording.js"
@@ -24,7 +24,7 @@ describe("xAI Video recorded", () => {
         const generation = yield* Video.start({
           model,
           prompt: "A single red balloon drifting slowly upward against a clear blue sky.",
-          aspect: "16:9",
+          aspectRatio: "16:9",
           resolution: "480p",
           durationSeconds: 2,
         })

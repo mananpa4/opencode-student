@@ -1,0 +1,195 @@
+/* =========================================================================
+ * Liquid Glass — surface tokens (OpenCode Student)
+ *
+ * Every component in the app paints itself with a token from this file, so
+ * re-pointing the tokens turns the whole UI to glass without touching a
+ * single component. The values are alphas, not paint: each layer lets the
+ * aurora behind the shell show through and composites with the layers below
+ * it, which is what gives stacked panels their depth.
+ *
+ * This file is imported WITHOUT a cascade layer on purpose. The theme runtime
+ * writes its tokens into an unlayered <style> element on `:root`, and an
+ * unlayered declaration always beats a layered one regardless of specificity.
+ * `:root:root` then outranks that plain `:root`, which is the only way an
+ * override can win against it.
+ *
+ * Depth ladder (alpha rises with depth, so nested surfaces stay distinct):
+ *   deep     the window floor
+ *   base     content well
+ *   layer-01 panels and overlay bodies
+ *   layer-02..04 raised rows, chips, controls
+ * ========================================================================= */
+
+:root:root {
+  /* ── Window + content wells ─────────────────────────────────────────── */
+  --v2-background-bg-deep: rgba(247, 247, 251, 0.45);
+  --v2-background-bg-base: rgba(252, 252, 255, 0.52);
+
+  /* ── Surfaces ───────────────────────────────────────────────────────── */
+  --v2-background-bg-layer-01: rgba(255, 255, 255, 0.26);
+  --v2-background-bg-layer-02: rgba(255, 255, 255, 0.34);
+  --v2-background-bg-layer-03: rgba(255, 255, 255, 0.42);
+  --v2-background-bg-layer-04: rgba(255, 255, 255, 0.5);
+  --v2-background-bg-button-neutral: rgba(255, 255, 255, 0.3);
+
+  /* ── Interaction overlays ───────────────────────────────────────────── */
+  /* A tint, not a fill: states stay visible on an almost-white pane while
+     the rim in glass.css supplies the specular half of the feedback. */
+  --v2-overlay-simple-overlay-hover: rgba(20, 18, 45, 0.07);
+  --v2-overlay-simple-overlay-pressed: rgba(20, 18, 45, 0.13);
+
+  /* A lighter scrim keeps the frosted dialog reading as glass over content. */
+  --v2-overlay-simple-overlay-scrim: rgba(14, 12, 32, 0.26);
+
+  /* ── Legacy aliases (tabs, docks, popovers, inputs) ─────────────────── */
+  --background-base: rgba(252, 252, 255, 0.52);
+  --background-weak: rgba(244, 244, 250, 0.44);
+  --background-strong: rgba(255, 255, 255, 0.56);
+  --background-stronger: rgba(255, 255, 255, 0.6);
+
+  --surface-raised-stronger-non-alpha: rgba(255, 255, 255, 0.55);
+
+  --input-base: rgba(255, 255, 255, 0.34);
+  --input-hover: rgba(255, 255, 255, 0.44);
+  --input-active: rgba(255, 255, 255, 0.56);
+  --input-focus: rgba(255, 255, 255, 0.56);
+
+  --button-secondary-base: rgba(255, 255, 255, 0.34);
+  --button-secondary-hover: rgba(255, 255, 255, 0.46);
+  --button-ghost-hover: rgba(255, 255, 255, 0.34);
+  --button-ghost-hover2: rgba(255, 255, 255, 0.46);
+}
+
+/* The runtime sets `data-color-scheme` on <html> for both modes, so dark is an
+   explicit override rather than an OS media query. */
+:root:root[data-color-scheme="dark"] {
+  --v2-background-bg-deep: rgba(8, 8, 14, 0.42);
+  --v2-background-bg-base: rgba(16, 16, 22, 0.48);
+
+  --v2-background-bg-layer-01: rgba(28, 28, 36, 0.42);
+  --v2-background-bg-layer-02: rgba(38, 38, 48, 0.46);
+  --v2-background-bg-layer-03: rgba(48, 48, 60, 0.5);
+  --v2-background-bg-layer-04: rgba(58, 58, 72, 0.54);
+  --v2-background-bg-button-neutral: rgba(255, 255, 255, 0.07);
+
+  --v2-overlay-simple-overlay-hover: rgba(255, 255, 255, 0.09);
+  --v2-overlay-simple-overlay-pressed: rgba(255, 255, 255, 0.16);
+  --v2-overlay-simple-overlay-scrim: rgba(0, 0, 0, 0.46);
+
+  --background-base: rgba(16, 16, 22, 0.48);
+  --background-weak: rgba(30, 30, 38, 0.44);
+  --background-strong: rgba(20, 20, 26, 0.52);
+  --background-stronger: rgba(24, 24, 32, 0.56);
+
+  --surface-raised-stronger-non-alpha: rgba(32, 32, 42, 0.62);
+
+  --input-base: rgba(28, 28, 36, 0.46);
+  --input-hover: rgba(38, 38, 48, 0.52);
+  --input-active: rgba(44, 44, 56, 0.58);
+  --input-focus: rgba(44, 44, 56, 0.58);
+
+  --button-secondary-base: rgba(32, 32, 40, 0.5);
+  --button-secondary-hover: rgba(44, 44, 56, 0.58);
+  --button-ghost-hover: rgba(255, 255, 255, 0.07);
+  --button-ghost-hover2: rgba(255, 255, 255, 0.11);
+}
+
+/*
+ * The `alpha` window composites the real desktop behind it with no system blur (Windows 10, macOS
+ * with a transparent frame), so whatever sits behind the window is drawn at full sharpness. Two
+ * things follow, and both are scoped to `alpha` because a `system-backdrop` window gets a real
+ * blurred material from the OS and keeps the normal tokens:
+ *
+ *   1. the floor cannot be a thin tint, or text from the window behind reads through the sidebar;
+ *   2. copy sits on the wallpaper instead of on a near-white well, so the text scale goes to
+ *      near-black the way 7.css pairs `--w7-el-c: #000` with its halo.
+ */
+:root:root[data-window-transparency="alpha"] {
+  --v2-background-bg-deep: rgba(255, 255, 255, 0.68);
+  --v2-background-bg-base: rgba(255, 255, 255, 0.72);
+  --background-base: rgba(255, 255, 255, 0.72);
+  --background-weak: rgba(255, 255, 255, 0.66);
+
+  --v2-text-text-base: #0a0a0c;
+  --v2-text-text-muted: #141418;
+  --v2-text-text-faint: #24242a;
+  --text-base: #1b1b20;
+  --text-weak: #24242a;
+  --text-strong: #000;
+}
+
+:root:root[data-window-transparency="alpha"][data-color-scheme="dark"] {
+  --v2-background-bg-deep: rgba(8, 8, 14, 0.6);
+  --v2-background-bg-base: rgba(12, 12, 18, 0.66);
+  --background-base: rgba(12, 12, 18, 0.66);
+  --background-weak: rgba(14, 14, 20, 0.58);
+
+  --v2-text-text-base: #fbfbfd;
+  --v2-text-text-muted: #e6e6ec;
+  --v2-text-text-faint: #d2d2da;
+  --text-base: #f2f2f6;
+  --text-weak: #dcdce4;
+  --text-strong: #fff;
+}
+
+/*
+ * Fallback for readers who ask the OS to reduce transparency: put the paint
+ * back and let the glass layer's blur fall away (see glass.css). Declared last,
+ * and with one extra `:root` so it also outranks the transparent-window block
+ * above, which carries an attribute selector.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  :root:root:root {
+    --v2-background-bg-deep: #f7f7fb;
+    --v2-background-bg-base: #fcfcff;
+    --v2-background-bg-layer-01: #f4f4f9;
+    --v2-background-bg-layer-02: #eeeef5;
+    --v2-background-bg-layer-03: #e7e7f0;
+    --v2-background-bg-layer-04: #e0e0ea;
+    --v2-background-bg-button-neutral: #fbfbfe;
+    --v2-overlay-simple-overlay-hover: rgba(20, 18, 45, 0.06);
+    --v2-overlay-simple-overlay-pressed: rgba(20, 18, 45, 0.12);
+    --v2-overlay-simple-overlay-scrim: rgba(14, 12, 32, 0.4);
+
+    --background-base: #fcfcff;
+    --background-weak: #f4f4fa;
+    --background-strong: #fbfbfe;
+    --background-stronger: #f9f9fd;
+    --surface-raised-stronger-non-alpha: #fbfbfe;
+    --input-base: #fbfbfe;
+    --input-hover: #f6f6fb;
+    --input-active: #fbfbfe;
+    --input-focus: #fbfbfe;
+    --button-secondary-base: #fbfbfe;
+    --button-secondary-hover: #f4f4fa;
+    --button-ghost-hover: rgba(20, 18, 45, 0.05);
+    --button-ghost-hover2: rgba(20, 18, 45, 0.09);
+  }
+
+  :root:root:root[data-color-scheme="dark"] {
+    --v2-background-bg-deep: #08080e;
+    --v2-background-bg-base: #101016;
+    --v2-background-bg-layer-01: #1a1a22;
+    --v2-background-bg-layer-02: #22222c;
+    --v2-background-bg-layer-03: #2b2b36;
+    --v2-background-bg-layer-04: #343440;
+    --v2-background-bg-button-neutral: #1e1e26;
+    --v2-overlay-simple-overlay-hover: rgba(255, 255, 255, 0.08);
+    --v2-overlay-simple-overlay-pressed: rgba(255, 255, 255, 0.14);
+    --v2-overlay-simple-overlay-scrim: rgba(0, 0, 0, 0.6);
+
+    --background-base: #101016;
+    --background-weak: #1c1c24;
+    --background-strong: #14141a;
+    --background-stronger: #17171f;
+    --surface-raised-stronger-non-alpha: #1e1e26;
+    --input-base: #1a1a22;
+    --input-hover: #22222c;
+    --input-active: #26262f;
+    --input-focus: #26262f;
+    --button-secondary-base: #1e1e26;
+    --button-secondary-hover: #26262f;
+    --button-ghost-hover: rgba(255, 255, 255, 0.07);
+    --button-ghost-hover2: rgba(255, 255, 255, 0.11);
+  }
+}

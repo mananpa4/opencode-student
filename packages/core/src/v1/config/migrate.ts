@@ -13,6 +13,7 @@ import { Model } from "../../model.js"
 
 const decodeOptions = { errors: "all", onExcessProperty: "ignore" } as const
 const decodeAgent = Schema.decodeUnknownSync(Schema.fromJsonString(ConfigAgent.Info), decodeOptions)
+const encodeAgent = Schema.encodeSync(ConfigAgent.Info)
 
 function permissions(info?: ConfigPermissionV1.Info) {
   const rules = (info ?? []).flatMap(([key, rule]) => {
@@ -25,7 +26,7 @@ function permissions(info?: ConfigPermissionV1.Info) {
 
 // Map v1 permission/tool keys onto their renamed v2 tool actions so migrated rules keep matching.
 export function normalizeAction(action: string) {
-  if (action === "write" || action === "patch" || action === "apply_patch") return "edit"
+  if (action === "write" || action === "patch") return "edit"
   if (action === "task") return "subagent"
   if (action === "bash") return "shell"
   return action
@@ -37,19 +38,21 @@ export function migrateAgent(info: ConfigAgentV1.Info) {
     ...(info.temperature === undefined ? {} : { temperature: info.temperature }),
     ...(info.top_p === undefined ? {} : { top_p: info.top_p }),
   }
-  return decodeAgent(
-    JSON.stringify({
-      model: modelSelection(info.model, info.variant),
-      request: Object.keys(body).length ? { body } : undefined,
-      system: info.prompt,
-      description: info.description,
-      mode: info.mode,
-      hidden: info.hidden,
-      color: info.color === undefined ? undefined : info.color.startsWith("#") ? info.color : "#aaaaaa",
-      steps: info.steps,
-      disabled: info.disable,
-      permissions: permissions(info.permission),
-    }),
+  return encodeAgent(
+    decodeAgent(
+      JSON.stringify({
+        model: modelSelection(info.model, info.variant),
+        request: Object.keys(body).length ? { body } : undefined,
+        system: info.prompt,
+        description: info.description,
+        mode: info.mode,
+        hidden: info.hidden,
+        color: info.color === undefined ? undefined : info.color.startsWith("#") ? info.color : "#aaaaaa",
+        steps: info.steps,
+        disabled: info.disable,
+        permissions: permissions(info.permission),
+      }),
+    ),
   )
 }
 
@@ -87,7 +90,6 @@ export function migrateMcp(info: ConfigMCPV1.Info) {
       cwd: info.cwd,
       environment: info.environment,
       disabled,
-      codemode: info.codemode,
       timeout: info.timeout === undefined ? undefined : migrateMcpTimeout(info.timeout),
     }
   return {
@@ -102,7 +104,6 @@ export function migrateMcp(info: ConfigMCPV1.Info) {
       redirect_uri: info.oauth.redirectUri,
     },
     disabled,
-    codemode: info.codemode,
     timeout: info.timeout === undefined ? undefined : migrateMcpTimeout(info.timeout),
   }
 }

@@ -2,10 +2,11 @@ export * as WebSearchTool from "./websearch.js"
 
 import type { Context } from "@opencode/plugin/effect/plugin"
 import type { SessionHooks } from "@opencode/plugin/effect/session"
-import { ToolFailure } from "@opencode/ai/effect"
+import { ToolFailure } from "@opencode/ai"
 import { Effect, Schema, Semaphore } from "effect"
 import { HttpClientError } from "effect/http"
 import { Form } from "../../form.js"
+import { sanitizeWebContent } from "../../network/sanitize.js"
 import { Permission } from "../../permission.js"
 import { WebSearch } from "../../websearch.js"
 
@@ -148,7 +149,12 @@ export const Plugin = {
               )
               const output = {
                 provider: result.providerID,
-                results: result.results,
+                // Snippets are untrusted page text too, so they get the same hygiene pass as webfetch.
+                results: result.results.map((result) => {
+                  if (!result.content) return result
+                  const sanitized = sanitizeWebContent(result.content)
+                  return { ...result, content: sanitized.flagged ? "" : sanitized.clean }
+                }),
               }
               const content = output.results.length
                 ? output.results

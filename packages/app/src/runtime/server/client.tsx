@@ -3,8 +3,6 @@ import { createClientConnection, createPtyClient, type ClientConnectionStatus } 
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { type Accessor, createEffect, on, onCleanup } from "solid-js"
 import { createApiForServer, type ServerApi } from "@/runtime/server/api"
-import { createMediaCache, type MediaCache } from "@/runtime/server/media"
-import { setMediaBlobLoader } from "@/runtime/persistence/drafts"
 import { usePlatform } from "@/runtime/platform/platform"
 import { ServerConnection } from "./registry"
 import { createRefCountMap } from "@/runtime/server/refcount"
@@ -64,10 +62,7 @@ type ServerSDKBase = {
   server: ServerConnection.Any
   scope: ServerScope
   url: string
-  /** The connection the API currently uses, which a managed server's reconnect may replace. */
-  http: ServerConnection.HttpBase
   api: ServerApi
-  media: MediaCache
   pty: ReturnType<typeof createPtyClient>
   connection: {
     status: Accessor<ServerConnectionStatus>
@@ -80,15 +75,8 @@ type ServerSDKBase = {
 function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerScope): ServerSDKBase {
   const platform = usePlatform()
   const transport = createServerTransport({ http: server.http, fetch: platform.fetch })
-  const media = createMediaCache(() => transport.api)
-  const serverKey = ServerConnection.key(server)
-  setMediaBlobLoader(serverKey, (uri) => media.load(uri))
-  onCleanup(() => {
-    setMediaBlobLoader(serverKey, undefined)
-    media.dispose()
-  })
 
-  if (server.type === "plugin") {
+  if (server.type === "extension") {
     createEffect(
       on(
         () => `${server.http.url}\0${server.http.password ?? ""}`,
@@ -99,7 +87,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   }
 
   const events = createOpenCodeEventSource()
-  const reconnect = server.type === "plugin" || server.type === "sidecar" ? server.reconnect : undefined
+  const reconnect = server.type === "extension" || server.type === "sidecar" ? server.reconnect : undefined
 
   const connection = createClientConnection(transport.api, {
     reconnect: reconnect ? async (signal) => transport.update(await reconnect(signal)) : undefined,
@@ -122,13 +110,9 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     get url() {
       return transport.url
     },
-    get http() {
-      return transport.http
-    },
     get api() {
       return transport.api
     },
-    media,
     get pty() {
       return transport.pty
     },
@@ -137,24 +121,12 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   }
 }
 
-/** A server's HTTP and PTY clients, rebuilt when its endpoint changes. */
-export interface ServerTransport {
-  /** Rebuilds the clients for a new endpoint and returns the new API client. */
+export function createServerTransport(input: { http: ServerConnection.HttpBase; fetch?: typeof globalThis.fetch }): {
   update(http: ServerConnection.HttpBase): ServerApi
-  /** The current base URL. */
   readonly url: string
-  /** The current endpoint. */
-  readonly http: ServerConnection.HttpBase
-  /** The current API client. */
   readonly api: ServerApi
-  /** The current PTY client. */
   readonly pty: ReturnType<typeof createPtyClient>
-}
-
-export function createServerTransport(input: {
-  http: ServerConnection.HttpBase
-  fetch?: typeof globalThis.fetch
-}): ServerTransport {
+} {
   const queue = createRequestQueue({ fetch: input.fetch ?? globalThis.fetch })
 
   const build = (http: ServerConnection.HttpBase) => {
@@ -173,9 +145,6 @@ export function createServerTransport(input: {
     },
     get url() {
       return state.current.http.url
-    },
-    get http() {
-      return state.current.http
     },
     get api() {
       return state.current.api

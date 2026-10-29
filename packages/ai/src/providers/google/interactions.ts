@@ -8,9 +8,9 @@ export type Settings = ProviderPackage.Settings &
     readonly baseURL?: string
   }
 
-export const model: ProviderPackage.Model<Settings, GoogleInteractions.ProviderOptionsInput> = (
+export const model: ProviderPackage.Definition<Settings, GoogleInteractions.ProviderOptionsInput>["model"] = (
   modelID,
-  { apiKey, baseURL, body, headers, ...providerOptions }: Settings = {},
+  { apiKey, baseURL, body, headers, ...providerOptions },
 ) =>
   configure({
     apiKey,

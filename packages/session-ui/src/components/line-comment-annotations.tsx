@@ -45,13 +45,13 @@ export type LineCommentStateProps<T> = {
   hoverSelected?: (range: SelectedLineRange) => void
 }
 
-export type SavedLineComment = {
+export type LineCommentShape = {
   id: string
   selection: SelectedLineRange
   comment: string
 }
 
-type LineCommentControllerProps<T extends SavedLineComment> = {
+type LineCommentControllerProps<T extends LineCommentShape> = {
   comments: Accessor<T[]>
   draftKey: Accessor<string>
   label: string
@@ -68,7 +68,7 @@ type LineCommentControllerProps<T extends SavedLineComment> = {
   clearSelectionOnSelectionEndNull?: boolean
 }
 
-type LineCommentControllerWithSideProps<T extends SavedLineComment> = LineCommentControllerProps<T> & {
+type LineCommentControllerWithSideProps<T extends LineCommentShape> = LineCommentControllerProps<T> & {
   getSide: (range: SelectedLineRange) => "additions" | "deletions"
 }
 
@@ -230,16 +230,15 @@ function lineCommentDraftElement(view: Accessor<DraftProps>) {
 }
 
 export function createLineCommentState<T>(props: LineCommentStateProps<T>) {
-  const [state, setState] = createStore<{ draft: string; editing: T | null }>({
+  const [state, setState] = createStore({
     draft: "",
-    editing: null,
+    editing: null as T | null,
   })
 
   const draft = () => state.draft
   const setDraft = (value: string) => setState("draft", value)
   const editing = () => state.editing
-  // The updater form stores `value` as is, even when it is itself a function.
-  const setEditing = (value: T | null) => setState("editing", () => value)
+  const setEditing = (value: T | null) => setState("editing", typeof value === "function" ? () => value : value)
 
   const toRange = (range: SelectedLineRange | null) => (range ? cloneSelectedLineRange(range) : null)
 
@@ -341,7 +340,7 @@ export function createLineCommentState<T>(props: LineCommentStateProps<T>) {
   }
 }
 
-export function createLineCommentController<T extends SavedLineComment>(
+export function createLineCommentController<T extends LineCommentShape>(
   props: LineCommentControllerWithSideProps<T>,
 ): {
   note: ReturnType<typeof createLineCommentState<string>>
@@ -353,7 +352,7 @@ export function createLineCommentController<T extends SavedLineComment>(
   onLineSelected: (range: SelectedLineRange | null) => void
   onLineSelectionEnd: (range: SelectedLineRange | null) => void
 }
-export function createLineCommentController<T extends SavedLineComment>(
+export function createLineCommentController<T extends LineCommentShape>(
   props: LineCommentControllerProps<T>,
 ): {
   note: ReturnType<typeof createLineCommentState<string>>
@@ -365,7 +364,7 @@ export function createLineCommentController<T extends SavedLineComment>(
   onLineSelected: (range: SelectedLineRange | null) => void
   onLineSelectionEnd: (range: SelectedLineRange | null) => void
 }
-export function createLineCommentController<T extends SavedLineComment>(
+export function createLineCommentController<T extends LineCommentShape>(
   props: LineCommentControllerProps<T> | LineCommentControllerWithSideProps<T>,
 ) {
   const i18n = useI18n()

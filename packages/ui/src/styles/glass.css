@@ -1,0 +1,592 @@
+/* =========================================================================
+ * Liquid Glass — optical material system (OpenCode Student)
+ *
+ * The UI is built from one physical model instead of per-component decoration:
+ *
+ *   1. REFRACTION  A translucent fill samples what is behind it through
+ *                  `backdrop-filter: blur() saturate() brightness()`. The blur
+ *                  radius is the optical thickness, so thicker glass blurs more
+ *                  and nested glass gains depth instead of flatness.
+ *   2. FRESNEL     Reflectance is about 4% head-on (n = 1.5) and climbs toward
+ *                  grazing incidence, so edges carry a bright rim while faces
+ *                  stay almost clear.
+ *   3. SPECULAR    A top-down gradient plus a diagonal streak stand in for the
+ *                  studio light the surface reflects.
+ *   4. AO          A 1px dark line under the top rim and a soft inner shadow
+ *                  keep the pane seated instead of floating.
+ *   5. DEPTH       Four cast-shadow tiers (z1..z4) map to how far a surface is
+ *                  lifted, so panels, docks, menus and dialogs never share one
+ *                  height.
+ *   6. MOTION      Interaction runs on damped springs sampled into `linear()`
+ *                  rather than symmetric eases: press is stiff, release
+ *                  overshoots and settles.
+ *
+ * Cascade: this file is deliberately unlayered, and every selector carries a
+ * `:root:root` prefix. Most component stylesheets are injected by the dev
+ * server without a cascade layer, and an unlayered rule always beats a layered
+ * one, so a `layer(components)` or later `layer(glass)` theme could never win.
+ * The prefix adds the specificity needed to beat each component's own rule.
+ *
+ * Cost control: `backdrop-filter` is spent only on large surfaces (panels,
+ * docks, overlays, dialogs, the composer, text fields). Small controls reuse
+ * the same rim / specular / glow recipe with a translucent fill and no extra
+ * blur pass, which keeps long lists and tool cards cheap to paint.
+ *
+ * Fill alphas live in `glass-tokens.css`, which re-points the component tokens
+ * themselves so untargeted surfaces turn to glass as well.
+ *
+ * Technique references: AndroidLiquidGlass (AGSL SDF refraction and Fresnel
+ * edge light) and LiquidGlassEffect (displacement plus backdrop blur/saturate).
+ * ========================================================================= */
+
+:root:root {
+  /* ── Optical constants ─────────────────────────────────────────────── */
+  --glass-ior: 1.5;
+  /* R0 = ((n - 1) / (n + 1))^2 — reflectance at normal incidence. */
+  --glass-fresnel: 0.04;
+
+  /* ── Optical thickness → blur radius ───────────────────────────────── */
+  --glass-filter-hairline: blur(8px) saturate(1.55);
+  --glass-filter-thin: blur(16px) saturate(1.7);
+  --glass-filter-base: blur(28px) saturate(1.8) brightness(1.04);
+  --glass-filter-thick: blur(40px) saturate(1.85) brightness(1.05);
+  --glass-filter-deep: blur(48px) saturate(1.9) brightness(1.06);
+
+  /* ── Fill: light passing through, not paint laid on top ─────────────── */
+  --glass-fill-hairline: rgba(255, 255, 255, 0.14);
+  --glass-fill-thin: rgba(255, 255, 255, 0.2);
+  --glass-fill-base: rgba(255, 255, 255, 0.16);
+  --glass-fill-thick: rgba(255, 255, 255, 0.26);
+  --glass-fill-deep: rgba(255, 255, 255, 0.3);
+  --glass-fill-hover: rgba(255, 255, 255, 0.34);
+  --glass-fill-pressed: rgba(255, 255, 255, 0.46);
+
+  /* ── Fresnel rim, specular sheen, ambient occlusion ────────────────── */
+  --glass-rim-top: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  --glass-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  --glass-edge: rgba(20, 18, 45, 0.12);
+  --glass-ao: inset 0 -1px 1px rgba(20, 18, 45, 0.05), inset 0 2px 14px rgba(20, 18, 45, 0.04);
+
+  /* `rgba(255,255,255,0)` instead of `transparent`: the latter interpolates
+     through a grey that fringes the sheen. */
+  --glass-sheen: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0.1) 34%,
+    rgba(255, 255, 255, 0) 58%
+  );
+  --glass-sheen-floor: linear-gradient(0deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0) 26%);
+  --glass-sheen-diagonal: linear-gradient(
+    112deg,
+    rgba(255, 255, 255, 0) 36%,
+    rgba(255, 255, 255, 0.18) 48%,
+    rgba(255, 255, 255, 0) 60%
+  );
+
+  /* ── Cast shadows: one tier per depth ──────────────────────────────── */
+  --glass-shadow-z1: 0 1px 2px rgba(20, 18, 45, 0.06), 0 4px 12px rgba(20, 18, 45, 0.05);
+  --glass-shadow-z2: 0 2px 6px rgba(20, 18, 45, 0.08), 0 10px 26px rgba(20, 18, 45, 0.07);
+  --glass-shadow-z3: 0 6px 16px rgba(20, 18, 45, 0.1), 0 20px 44px rgba(20, 18, 45, 0.1);
+  --glass-shadow-z4: 0 10px 28px rgba(20, 18, 45, 0.14), 0 36px 80px rgba(20, 18, 45, 0.16);
+
+  /* ── Legibility glow ───────────────────────────────────────────────── */
+  /* The recipe is 7.css's Aero halo (github.com/khang-nd/7.css): the same
+     shadow is repeated instead of widening one blur, so the layers stack into
+     an opaque ring around each glyph. That is what keeps black text readable
+     over a busy wallpaper, which is the whole point of a transparent window.
+     Light theme is dark-on-light, so the halo is white. */
+  --glass-glow-aero: 0 0 10px #fff, 0 0 10px #fff, 0 0 10px #fff, 0 0 10px #fff, 0 0 10px #fff,
+    0 0 10px #fff, 0 0 10px #fff, 0 0 10px #fff;
+  --glass-glow: 0 0 5px rgba(255, 255, 255, 0.9), 0 0 5px rgba(255, 255, 255, 0.9),
+    0 0 5px rgba(255, 255, 255, 0.9), 0 0 1px #fff;
+  --glass-glow-soft: 0 0 3px rgba(255, 255, 255, 0.9), 0 0 3px rgba(255, 255, 255, 0.9),
+    0 0 1px rgba(255, 255, 255, 0.95);
+  --glass-glow-icon: drop-shadow(0 0 2px rgba(255, 255, 255, 0.9))
+    drop-shadow(0 0 2px rgba(255, 255, 255, 0.9));
+  --glass-glow-icon-strong: drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff)
+    drop-shadow(0 0 2px #fff) drop-shadow(0 0 6px rgba(255, 255, 255, 0.8));
+
+  /* ── Motion ────────────────────────────────────────────────────────── */
+  --glass-duration-fast: 160ms;
+  --glass-duration-base: 240ms;
+  --glass-duration-slow: 360ms;
+  --glass-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Damped springs sampled to linear(); press is stiff, release overshoots. */
+  --glass-spring-snap: linear(
+    0,
+    0.02 1.9%,
+    0.09 4.1%,
+    0.28 7.4%,
+    0.52 10.9%,
+    0.76 14.6%,
+    0.93 18.4%,
+    1.04 22.4%,
+    1.09 26.6%,
+    1.09 31%,
+    1.05 36.1%,
+    1.01 42%,
+    0.99 48.8%,
+    0.995 56.6%,
+    1.005 68%,
+    1.001 82%,
+    1
+  );
+  --glass-spring-soft: linear(
+    0,
+    0.009,
+    0.035 2.1%,
+    0.141,
+    0.281 6.7%,
+    0.723 12.9%,
+    0.938 16.7%,
+    1.017,
+    1.077,
+    1.121,
+    1.149 24.3%,
+    1.159,
+    1.163,
+    1.161,
+    1.154 29.9%,
+    1.129 32.8%,
+    1.051 39.6%,
+    1.017 43.1%,
+    0.991,
+    0.977 51%,
+    0.974 53.8%,
+    0.975 57.1%,
+    0.997 69.8%,
+    1.003 76.9%,
+    1
+  );
+
+  /* Corner radius for glass surfaces that are not component-owned. */
+  --glass-radius: 18px;
+}
+
+:root:root[data-color-scheme="dark"] {
+  --glass-fill-hairline: rgba(255, 255, 255, 0.05);
+  --glass-fill-thin: rgba(255, 255, 255, 0.07);
+  --glass-fill-base: rgba(255, 255, 255, 0.05);
+  --glass-fill-thick: rgba(255, 255, 255, 0.08);
+  --glass-fill-deep: rgba(255, 255, 255, 0.1);
+  --glass-fill-hover: rgba(255, 255, 255, 0.12);
+  --glass-fill-pressed: rgba(255, 255, 255, 0.18);
+
+  --glass-rim-top: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  --glass-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  --glass-edge: rgba(255, 255, 255, 0.1);
+  --glass-ao: inset 0 -1px 1px rgba(0, 0, 0, 0.4), inset 0 2px 16px rgba(0, 0, 0, 0.28);
+
+  --glass-sheen: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0.04) 30%,
+    rgba(255, 255, 255, 0) 52%
+  );
+  --glass-sheen-floor: linear-gradient(0deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 24%);
+  --glass-sheen-diagonal: linear-gradient(
+    112deg,
+    rgba(255, 255, 255, 0) 36%,
+    rgba(255, 255, 255, 0.06) 48%,
+    rgba(255, 255, 255, 0) 60%
+  );
+
+  --glass-shadow-z1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+  --glass-shadow-z2: 0 2px 6px rgba(0, 0, 0, 0.45), 0 10px 26px rgba(0, 0, 0, 0.38);
+  --glass-shadow-z3: 0 6px 16px rgba(0, 0, 0, 0.5), 0 20px 44px rgba(0, 0, 0, 0.45);
+  --glass-shadow-z4: 0 10px 28px rgba(0, 0, 0, 0.55), 0 36px 80px rgba(0, 0, 0, 0.5);
+
+  /* Dark theme is light-on-dark, so the same stacked halo is black. */
+  --glass-glow-aero: 0 0 10px #000, 0 0 10px #000, 0 0 10px #000, 0 0 10px #000, 0 0 10px #000,
+    0 0 10px #000, 0 0 10px #000, 0 0 10px #000;
+  --glass-glow: 0 0 5px rgba(0, 0, 0, 0.9), 0 0 5px rgba(0, 0, 0, 0.9), 0 0 5px rgba(0, 0, 0, 0.9),
+    0 0 1px #000;
+  --glass-glow-soft: 0 0 3px rgba(0, 0, 0, 0.9), 0 0 3px rgba(0, 0, 0, 0.9), 0 0 1px rgba(0, 0, 0, 0.95);
+  --glass-glow-icon: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
+  --glass-glow-icon-strong: drop-shadow(0 0 2px #000) drop-shadow(0 0 2px #000)
+    drop-shadow(0 0 2px #000) drop-shadow(0 0 6px rgba(0, 0, 0, 0.8));
+}
+
+/* =========================================================================
+ * Material primitives
+ * ========================================================================= */
+
+/* Opt-in material classes, thinnest to thickest. */
+:root:root :is(.glass-hairline, .glass-thin, .glass, .glass-strong, .glass-base, .glass-thick, .glass-deep) {
+  position: relative;
+  background-image: var(--glass-sheen), var(--glass-sheen-floor);
+  -webkit-backdrop-filter: var(--glass-filter-base);
+  backdrop-filter: var(--glass-filter-base);
+  box-shadow: var(--glass-shadow-z2), var(--glass-rim-top), var(--glass-ring), var(--glass-ao);
+  /* `text-shadow` inherits, so every glyph inside glows by default. */
+  text-shadow: var(--glass-glow);
+}
+
+:root:root .glass-hairline {
+  background-color: var(--glass-fill-hairline);
+  background-image: var(--glass-sheen);
+  -webkit-backdrop-filter: var(--glass-filter-hairline);
+  backdrop-filter: var(--glass-filter-hairline);
+  box-shadow: var(--glass-rim-top), var(--glass-ring);
+}
+
+:root:root .glass-thin {
+  background-color: var(--glass-fill-thin);
+  -webkit-backdrop-filter: var(--glass-filter-thin);
+  backdrop-filter: var(--glass-filter-thin);
+  box-shadow: var(--glass-shadow-z1), var(--glass-rim-top), var(--glass-ring), var(--glass-ao);
+}
+
+:root:root .glass {
+  background-color: var(--glass-fill-base);
+}
+
+:root:root :is(.glass-strong, .glass-base) {
+  background-color: var(--glass-fill-thick);
+}
+
+:root:root .glass-thick {
+  background-color: var(--glass-fill-thick);
+  -webkit-backdrop-filter: var(--glass-filter-thick);
+  backdrop-filter: var(--glass-filter-thick);
+  box-shadow: var(--glass-shadow-z3), var(--glass-rim-top), var(--glass-ring), var(--glass-ao);
+}
+
+:root:root .glass-deep {
+  background-color: var(--glass-fill-deep);
+  -webkit-backdrop-filter: var(--glass-filter-deep);
+  backdrop-filter: var(--glass-filter-deep);
+  box-shadow: var(--glass-shadow-z4), var(--glass-rim-top), var(--glass-ring), var(--glass-ao);
+}
+
+/* Opt-in glow for content that is not inside a glass surface. */
+:root:root .glass-glow {
+  text-shadow: var(--glass-glow);
+}
+
+:root:root .glass-soft-glow {
+  text-shadow: var(--glass-glow-soft);
+}
+
+/* =========================================================================
+ * Text and icon glow
+ * ========================================================================= */
+
+/* A single soft halo everywhere; the surfaces below strengthen it. */
+:root:root body {
+  text-shadow: var(--glass-glow-soft);
+}
+
+/* Chromium does not inherit `text-shadow` into form controls, and most of the
+   app's clickable rows are plain <button>s, so the halo has to be declared on
+   them as well. Filled variants are excluded: a white halo on a dark pill
+   smears the label, and they already carry their own shadow. */
+:root:root :is(button, input, textarea, select):not([data-variant="contrast"], [data-variant="submit"]) {
+  text-shadow: var(--glass-glow-soft);
+}
+
+/* Icons are shapes, so `drop-shadow` reads better than `text-shadow`. */
+:root:root :is([data-slot="icon-svg"], [data-component="app-icon"] svg, [data-component="provider-icon"] svg) {
+  filter: var(--glass-glow-icon);
+}
+
+/* Dense monospace text sits on its own paint and is set at small sizes: a halo
+   turns the glyphs muddy instead of separating them from the backdrop. */
+:root:root
+  :is(
+    pre,
+    pre *,
+    code,
+    kbd,
+    samp,
+    .xterm,
+    .xterm *,
+    [data-component="terminal-panel"],
+    [data-component="terminal-panel"] *
+  ) {
+  text-shadow: none;
+}
+
+/* =========================================================================
+ * Depth 1 — panels resting on the content well
+ * ========================================================================= */
+
+:root:root
+  :is(
+    [data-slot="vertical-tabs-sidebar"],
+    [data-slot="session-chat-panel"],
+    [data-slot="session-side-panel-presence"],
+    [data-dock-surface="tray"],
+    [data-component="terminal-panel"],
+    [data-component="settings-panel"],
+    [data-component="filetree"],
+    [data-component="file-tree-v2"]
+  ) {
+  background-color: var(--glass-fill-base);
+  background-image: var(--glass-sheen), var(--glass-sheen-floor);
+  -webkit-backdrop-filter: var(--glass-filter-base);
+  backdrop-filter: var(--glass-filter-base);
+  box-shadow: var(--glass-shadow-z1), var(--glass-rim-top), var(--glass-ring), var(--glass-ao);
+  text-shadow: var(--glass-glow);
+}
+
+/* =========================================================================
+ * Depth 2 — docks and the titlebar
+ * ========================================================================= */
+
+:root:root
+  :is(
+    [data-dock-surface="shell"],
+    [data-slot="titlebar-v2"],
+    [data-slot="mobile-tabs-drawer"],
+    [data-slot="mobile-panel-drawer"]
+  ) {
+  background-color: var(--glass-fill-thick);
+  background-image: var(--glass-sheen), var(--glass-sheen-floor);
+  -webkit-backdrop-filter: var(--glass-filter-thick);
+  backdrop-filter: var(--glass-filter-thick);
+  box-shadow: var(--glass-shadow-z2), var(--glass-rim-top), var(--glass-ring), var(--glass-ao);
+  text-shadow: var(--glass-glow);
+}
+
+/* The title bar is the one place that gets 7.css's literal recipe: it sits on
+   the brightest part of the glass, carries only tab labels, and its text has to
+   survive any wallpaper underneath. */
+:root:root [data-slot="titlebar-v2"] {
+  text-shadow: var(--glass-glow-aero);
+}
+
+/* The composer sits inside its dock: a thinner pane so both stay readable. */
+:root:root [data-component="composer"] {
+  background-color: var(--glass-fill-base);
+  background-image: var(--glass-sheen), var(--glass-sheen-floor);
+  -webkit-backdrop-filter: var(--glass-filter-base);
+  backdrop-filter: var(--glass-filter-base);
+  box-shadow: var(--glass-rim-top), var(--glass-ring);
+  text-shadow: var(--glass-glow);
+}
+
+:root:root [data-component="composer"] > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* =========================================================================
+ * Depth 3 — floating overlays (menus, popovers, tooltips, toasts)
+ * ========================================================================= */
+
+:root:root
+  :is(
+    [data-component="menu-v2-content"],
+    [data-slot="select-v2-content"],
+    [data-component="popover-content"],
+    [data-component="select-content"],
+    [data-component="hover-card-content"],
+    [data-component="context-menu-content"],
+    [data-component="context-menu-sub-content"],
+    [data-component="tooltip-v2"],
+    .toast-v2
+  ) {
+  background-color: var(--glass-fill-thick);
+  background-image: var(--glass-sheen), var(--glass-sheen-floor), var(--glass-sheen-diagonal);
+  -webkit-backdrop-filter: var(--glass-filter-thick);
+  backdrop-filter: var(--glass-filter-thick);
+  box-shadow: var(--glass-shadow-z3), var(--glass-rim-top), var(--glass-ring), var(--glass-ao);
+  text-shadow: var(--glass-glow);
+}
+
+/* Tooltips are small: a deep blur turns their own text muddy. */
+:root:root [data-component="tooltip-v2"] {
+  background-color: var(--glass-fill-deep);
+  background-image: var(--glass-sheen);
+  -webkit-backdrop-filter: var(--glass-filter-thin);
+  backdrop-filter: var(--glass-filter-thin);
+  box-shadow: var(--glass-shadow-z3), var(--glass-rim-top), var(--glass-ring);
+}
+
+/* =========================================================================
+ * Depth 4 — dialogs
+ * ========================================================================= */
+
+:root:root
+  :is(
+    [data-component="dialog-v2"] [data-slot="dialog-container"],
+    [data-component="dialog"] [data-slot="dialog-container"],
+    [data-component="dialog-content"]
+  ) {
+  background-color: var(--glass-fill-deep);
+  background-image: var(--glass-sheen), var(--glass-sheen-floor), var(--glass-sheen-diagonal);
+  -webkit-backdrop-filter: var(--glass-filter-deep);
+  backdrop-filter: var(--glass-filter-deep);
+  box-shadow: var(--glass-shadow-z4), var(--glass-rim-top), var(--glass-ring), var(--glass-ao);
+  text-shadow: var(--glass-glow);
+}
+
+/* The scrim is glass too: it dims without hiding what the dialog refracts. */
+:root:root [data-component="dialog-overlay"] {
+  -webkit-backdrop-filter: blur(2px) saturate(1.1);
+  backdrop-filter: blur(2px) saturate(1.1);
+}
+
+/* =========================================================================
+ * Raised content — cards and tool surfaces
+ * ========================================================================= */
+
+:root:root
+  :is(
+    [data-component="card"],
+    [data-component="task-tool-card"],
+    [data-component="task-tool-surface"],
+    [data-component="attachment-card"],
+    [data-component="tool-output"]
+  ) {
+  background-color: var(--glass-fill-hairline);
+  background-image: var(--glass-sheen);
+  box-shadow: var(--glass-rim-top), var(--glass-ring);
+}
+
+/* =========================================================================
+ * Controls — the same recipe, no extra blur pass
+ * ========================================================================= */
+
+:root:root
+  :is(
+    [data-component="text-input-v2"],
+    [data-component="textarea-v2"],
+    [data-component="select-v2"],
+    [data-component="tag"],
+    [data-slot="keybind-v2-key"],
+    [data-component="checkbox"] [data-slot="checkbox-checkbox-control"],
+    [data-component="switch"] [data-slot="switch-control"],
+    [data-component="radio-v2"] [data-slot="radio-v2-item-control"]
+  ) {
+  background-color: var(--glass-fill-thin);
+  background-image: var(--glass-sheen), var(--glass-sheen-floor);
+  box-shadow: var(--glass-rim-top), var(--glass-ring), var(--glass-ao);
+}
+
+/* Text entry is where the material matters most, so it gets real refraction. */
+:root:root :is([data-component="text-input-v2"], [data-component="textarea-v2"]) {
+  -webkit-backdrop-filter: var(--glass-filter-thin);
+  backdrop-filter: var(--glass-filter-thin);
+}
+
+/* Segmented controls: a sunken track with a floating indicator. */
+:root:root [data-slot="segmented-control-v2"] {
+  background-color: var(--glass-fill-thin);
+  background-image: var(--glass-sheen);
+  box-shadow: var(--glass-ring), inset 0 1px 2px rgba(20, 18, 45, 0.06);
+}
+
+:root:root [data-slot="segmented-control-v2-indicator"] {
+  background-color: var(--glass-fill-deep);
+  background-image: var(--glass-sheen);
+  box-shadow: var(--glass-shadow-z1), var(--glass-rim-top), var(--glass-ring);
+}
+
+/* Tab strips keep their own layout; only the selected pill is glass. */
+:root:root [data-slot="tabs-trigger"][data-selected] {
+  background-image: var(--glass-sheen);
+  box-shadow: var(--glass-rim-top), var(--glass-ring);
+}
+
+/* =========================================================================
+ * Motion and interaction
+ * ========================================================================= */
+
+/* Filled variants already carry their own dark text shadow; a white halo on a
+   dark pill would smear the label. */
+:root:root
+  :is([data-component="button-v2"], [data-component="icon-button-v2"]):not(
+    [data-variant="contrast"],
+    [data-variant="submit"]
+  ) {
+  text-shadow: var(--glass-glow);
+  transition:
+    background-color var(--glass-duration-fast) var(--glass-ease-out),
+    box-shadow var(--glass-duration-fast) var(--glass-ease-out),
+    color var(--glass-duration-fast) var(--glass-ease-out),
+    opacity var(--glass-duration-fast) var(--glass-ease-out),
+    transform var(--glass-duration-base) var(--glass-spring-snap);
+}
+
+/* Light-touch variants get the Fresnel rim on top of their elevation. */
+:root:root
+  :is(
+    [data-component="button-v2"]:is([data-variant="neutral"], [data-variant="danger"], [data-variant="warning"]),
+    [data-component="icon-button-v2"]:is([data-variant="neutral"], [data-variant="danger"], [data-variant="warning"])
+  ) {
+  box-shadow: var(--v2-elevation-button-neutral), var(--glass-rim-top), var(--glass-ring);
+}
+
+:root:root [data-component="button-v2"][data-variant="outline"] {
+  box-shadow: var(--glass-ring), var(--glass-rim-top);
+}
+
+/* Press: the pane compresses, then the spring overshoots on release. */
+:root:root
+  :is([data-component="button-v2"], [data-component="icon-button-v2"]):is(:active, [data-state="pressed"]):not(
+    :disabled,
+    [data-state="disabled"]
+  ) {
+  transform: scale(0.97);
+}
+
+/* Hover lift on floating menu rows, matching the rim above them. */
+:root:root [data-component="menu-v2-item"]:is(:hover, [data-highlighted]) {
+  box-shadow: var(--glass-rim-top);
+}
+
+/* Menus and popovers enter with the soft spring rather than a linear fade. */
+:root:root
+  :is([data-component="menu-v2-content"], [data-component="popover-content"], [data-slot="select-v2-content"]) {
+  animation-timing-function: var(--glass-spring-soft);
+}
+
+/* =========================================================================
+ * Accessibility fallbacks
+ * ========================================================================= */
+
+@media (prefers-reduced-transparency: reduce) {
+  :root:root {
+    --glass-filter-hairline: none;
+    --glass-filter-thin: none;
+    --glass-filter-base: none;
+    --glass-filter-thick: none;
+    --glass-filter-deep: none;
+  }
+
+  :root:root [data-component="dialog-overlay"] {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:root :is([data-component="button-v2"], [data-component="icon-button-v2"]) {
+    transition: none;
+  }
+
+  :root:root :is([data-component="button-v2"], [data-component="icon-button-v2"]):is(:active, [data-state="pressed"]) {
+    transform: none;
+  }
+}
+
+@media (forced-colors: active) {
+  :root:root {
+    --glass-filter-hairline: none;
+    --glass-filter-thin: none;
+    --glass-filter-base: none;
+    --glass-filter-thick: none;
+    --glass-filter-deep: none;
+    --glass-glow: none;
+    --glass-glow-soft: none;
+    --glass-glow-aero: none;
+    --glass-glow-icon: none;
+    --glass-glow-icon-strong: none;
+  }
+
+  :root:root [data-slot="icon-svg"] {
+    filter: none;
+  }
+}

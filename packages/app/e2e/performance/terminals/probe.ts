@@ -1,5 +1,5 @@
 import { Terminal } from "ghostty-web"
-import { SerializeAddon } from "../../../../gui-plugins/src/terminal/serialize"
+import { SerializeAddon } from "../../../../gui-extensions/src/terminal/serialize"
 
 export type TerminalProbe = {
   term?: Terminal
@@ -39,8 +39,7 @@ Terminal.prototype.open = function (element) {
   open.call(this, element)
   // Ghostty does not expose render events. This benchmark-only wrapper observes its
   // actual renderer; it does not alter scheduling, parsing, or drawing.
-  // SAFETY: ghostty-web keeps its renderer on this undeclared field; the probe only wraps its render method.
-  const renderer = (this as Terminal & { renderer: { render: (...args: unknown[]) => void } }).renderer
+  const renderer = (this as unknown as { renderer: { render: (...args: unknown[]) => void } }).renderer
   const render = renderer.render
   let hidden = false
   renderer.render = function (...args) {
@@ -69,7 +68,7 @@ const write = Terminal.prototype.write
 Terminal.prototype.write = function (data, done) {
   probe.writes++
   probe.pending++
-  probe.bytes += data instanceof Uint8Array ? data.byteLength : new TextEncoder().encode(data).byteLength
+  probe.bytes += typeof data === "string" ? new TextEncoder().encode(data).byteLength : data.byteLength
 
   return write.call(this, data, () => {
     probe.pending--

@@ -13,7 +13,6 @@ import { LocaleLinks } from "../../component/locale-links"
 import { NotFoundMeta } from "../../component/not-found-meta"
 import { useI18n } from "../../context/i18n"
 import { useLanguage } from "../../context/language"
-import { dismissChartTooltipOnExit } from "../../lib/chart-tooltip"
 import { fromFirstUsage } from "../../lib/format"
 import { localizedUrl } from "../../lib/language"
 import { loadModelPage, type ModelPageData } from "../../lib/page-data"
@@ -645,12 +644,6 @@ function ModelTrendSection(props: {
   const activeLineMaskId = createUniqueId()
   const areaGradientId = createUniqueId()
   const [activeIndex, setActiveIndex] = createSignal<number>()
-  let chartRef: HTMLDivElement | undefined
-  dismissChartTooltipOnExit({
-    chart: () => chartRef,
-    open: () => activeIndex() !== undefined,
-    dismiss: () => setActiveIndex(undefined),
-  })
   const highlightBars = createMemo(() => props.highlightBars ?? true)
   const lineScale = 326 / 450
   const areaBottom = 100 / lineScale
@@ -697,7 +690,6 @@ function ModelTrendSection(props: {
         fallback={<ModelEmptyState title={props.emptyTitle} description={props.emptyDescription} />}
       >
         <div
-          ref={chartRef}
           data-component="model-usage-chart"
           data-variant="model-trend"
           data-highlight-bars={highlightBars() ? "true" : undefined}

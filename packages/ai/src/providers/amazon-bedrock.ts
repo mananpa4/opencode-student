@@ -21,19 +21,18 @@ export type Config = RouteDefaultsInput & {
   readonly region?: string
   /** Override the computed `https://bedrock-runtime.<region>.amazonaws.com` URL. */
   readonly baseURL?: string
-  readonly providerOptions?: BedrockConverse.OptionsInput
 }
 
-export type Settings = ProviderPackage.Settings &
-  BedrockConverse.OptionsInput & {
-    readonly apiKey?: string
-    readonly auth?: "bearer" | "sigv4"
-    readonly baseURL?: string
-    readonly credentials?: BedrockCredentials
-    readonly profile?: string
-    readonly region?: string
-    readonly topP?: number
-  }
+export interface Settings extends ProviderPackage.Settings {
+  readonly apiKey?: string
+  readonly auth?: "bearer" | "sigv4"
+  readonly baseURL?: string
+  readonly credentials?: BedrockCredentials
+  readonly profile?: string
+  readonly region?: string
+  readonly topP?: number
+  readonly thinking?: BedrockConverse.OptionsInput["thinking"]
+}
 export const routes = [BedrockConverse.route]
 
 const bedrockBaseURL = (region: string) => `https://bedrock-runtime.${region}.amazonaws.com`
@@ -58,25 +57,22 @@ export const configure = (input: Config = {}) => {
   const route = configuredRoute(input)
   return {
     id,
-    model: (modelID: string | ModelID) => route.model<BedrockConverse.OptionsInput>({ id: modelID }),
+    model: (modelID: string | ModelID) => route.model({ id: modelID }),
     configure,
   }
 }
 
 export const provider = configure()
-export const model: ProviderPackage.Model<Settings, BedrockConverse.OptionsInput> = (
-  modelID,
-  { apiKey, auth, baseURL, credentials, profile, region, topP, headers, body, ...providerOptions }: Settings = {},
-) =>
+export const model: ProviderPackage.Definition<Settings>["model"] = (modelID, settings) =>
   configure({
-    apiKey,
-    auth,
-    baseURL,
-    credentials,
-    generation: topP === undefined ? undefined : { topP },
-    headers: headers === undefined ? undefined : { ...headers },
-    http: body === undefined ? undefined : { body: { ...body } },
-    providerOptions,
-    profile,
-    region,
+    apiKey: settings.apiKey,
+    auth: settings.auth,
+    baseURL: settings.baseURL,
+    credentials: settings.credentials,
+    generation: settings.topP === undefined ? undefined : { topP: settings.topP },
+    headers: settings.headers === undefined ? undefined : { ...settings.headers },
+    http: settings.body === undefined ? undefined : { body: { ...settings.body } },
+    providerOptions: settings.thinking === undefined ? undefined : { thinking: settings.thinking },
+    profile: settings.profile,
+    region: settings.region,
   }).model(modelID)

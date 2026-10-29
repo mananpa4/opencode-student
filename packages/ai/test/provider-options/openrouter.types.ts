@@ -1,4 +1,4 @@
-import { LLM } from "../../src/effect.js"
+import { LLM } from "../../src/index.js"
 import { OpenRouter } from "../../src/providers.js"
 
 const model = OpenRouter.provider.model("anthropic/claude-sonnet-4.5")

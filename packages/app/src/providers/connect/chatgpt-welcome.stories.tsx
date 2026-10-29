@@ -16,7 +16,7 @@ function WelcomeStory() {
 }
 
 export default {
-  title: "App/Dialogs/ChatGPT welcome",
+  title: "App/Dialogs/Connect Provider",
   id: "app-dialog-chatgpt-welcome",
 }
 

@@ -1,9 +1,9 @@
 import { createSimpleContext } from "@opencode/ui/context"
 import type { AsyncStorage, SyncStorage } from "@solid-primitives/storage"
 import type { Accessor } from "solid-js"
-import type { DesktopMenuAction, DesktopZoomLevel } from "@/shell/commands/desktop-menu"
+import type { DesktopMenuAction } from "@/shell/commands/desktop-menu"
 import type { DraftStore } from "@/runtime/persistence/drafts"
-import type { Bridge } from "@opencode/plugin/gui/host"
+import type { Bridge } from "@opencode/gui-extensions/sdk/bridge"
 
 type PickerPaths = string | string[] | null
 
@@ -16,8 +16,6 @@ type OpenAttachmentPickerOptions = {
   extensions?: string[]
   defaultPath?: string
 }
-
-type OpenFilePathPickerOptions = { title?: string; multiple?: boolean; extensions?: string[] }
 
 type SaveFilePickerOptions = { title?: string; defaultPath?: string }
 
@@ -34,8 +32,6 @@ export type FatalRendererErrorLog = {
 }
 
 type PlatformBase = {
-  requestMicrophone?(): Promise<boolean>
-  setVoiceCallActive?(active: boolean): Promise<void>
   /** App version */
   version?: string
 
@@ -66,9 +62,6 @@ type PlatformBase = {
     onFile: (file: File) => Promise<Value>,
   ): Promise<void>
 
-  /** Open a native file picker and return the selected paths without reading the files (desktop only) */
-  openFilePathPickerDialog?(opts: OpenFilePathPickerOptions): Promise<string[] | null>
-
   /** Resolve the native source path for a desktop File. */
   getPathForFile?(file: File): string
 
@@ -90,17 +83,8 @@ type PlatformBase = {
   /** Webview zoom level (desktop only) */
   webviewZoom?: Accessor<number>
 
-  /** Saved interface zoom level; a pinch can move `webviewZoom` off it (desktop only) */
-  zoomLevel?: Accessor<DesktopZoomLevel>
-
-  /** Save an interface zoom level and apply it to every window (desktop only) */
-  setZoomLevel?(level: DesktopZoomLevel): Promise<void>
-
   /** Whether the native desktop window is fullscreen */
   windowFullscreen?: Accessor<boolean>
-
-  /** Move the native macOS traffic lights' top-left corner, in window points (desktop only) */
-  setTrafficLightsPosition?(position: { x: number; y: number }): Promise<void>
 
   /** Get whether native pinch/Ctrl-scroll zoom gestures are enabled (desktop only) */
   getPinchZoomEnabled?(): Promise<boolean> | boolean
@@ -129,8 +113,8 @@ type PlatformBase = {
   /** Record a fatal renderer error in platform logs (desktop only) */
   recordFatalRendererError?(error: FatalRendererErrorLog): Promise<void>
 
-  /** GUI plugin bridge to the main-process plugin host (desktop only). */
-  plugins?: Bridge
+  /** GUI extension bridge to the main-process extension host (desktop only). */
+  extensions?: Bridge
 }
 
 export type Platform = PlatformBase &

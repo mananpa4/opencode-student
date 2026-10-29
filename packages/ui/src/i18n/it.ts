@@ -241,6 +241,7 @@ export const dict: Record<string, string> = {
   "ui.question.answer.none": "(nessuna risposta)",
   "ui.question.review.notAnswered": "(senza risposta)",
   "ui.question.multiHint": "Seleziona tutte le risposte pertinenti",
+  "ui.question.singleHint": "Seleziona una risposta",
   "ui.question.custom.placeholder": "Digita la tua risposta…",
 
   "ui.messagePart.context.match.one": "(corrispondenza {{count}})",

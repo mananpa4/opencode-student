@@ -16,18 +16,16 @@ import {
   setDockIcon,
   setPinchZoomEnabled,
   setTitlebar,
-  setTrafficLightsPosition,
-  setZoomLevel,
+  setZoomFactor,
   updateTitlebar,
   windowAppearance,
-  wireFocus,
   wireFullscreen,
   wireZoom,
 } from "./appearance"
 import { registerRendererProtocol, setProtocolReporter } from "./protocol"
 import { loadWindow } from "./scheme"
 import { createWindowRegistry } from "./registry"
-import { windowRecovery } from "./recovery"
+import { makeWindowRecovery } from "./recovery"
 import { takeEarlyWindow, type EarlyWindow } from "./early"
 import { manageWindowState, readWindowState, resolveWindowState, windowStateFile } from "./window-state"
 import { allowRendererPermissions, wireNavigationPolicy, wireRendererHeaders } from "./security"
@@ -62,8 +60,7 @@ export {
   setDockIcon,
   setPinchZoomEnabled,
   setTitlebar,
-  setTrafficLightsPosition,
-  setZoomLevel,
+  setZoomFactor,
   updateTitlebar,
 }
 
@@ -117,13 +114,13 @@ export function setWindowThemeReady(win: BrowserWindow) {
   themeReady.get(win)?.()
 }
 
-export const mainWindows = Effect.fn("Window.make")(function* () {
+export const makeMainWindows = Effect.fn("Window.make")(function* () {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const paths = yield* DesktopPaths.resolve
   const storage = yield* DesktopStorage.Service
   const runFork = Effect.runForkWith(yield* Effect.context())
-  const wireWindowRecovery = yield* windowRecovery
+  const wireWindowRecovery = yield* makeWindowRecovery
 
   const restore = () => {
     // The entry module created and showed the first restored window on ready; it is adopted here,
@@ -173,7 +170,6 @@ export const mainWindows = Effect.fn("Window.make")(function* () {
     wireWindowRecovery(win, id, () => relaunchHandler())
     register(win, id)
     wireFullscreen(win)
-    wireFocus(win)
 
     if (!early) loadWindow(win, "index.html")
     wireZoom(win)

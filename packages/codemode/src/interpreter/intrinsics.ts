@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { define, hidden, Native, Arr, ErrorObj, Obj, type Value } from "./objects.js"
 
 export const errorTypes = [
@@ -65,7 +66,7 @@ export const primitivePrototype = (builtins: Builtins, value: Value): Obj | unde
 export const createBuiltins = (): Builtins => {
   const object = new Obj(null)
   // Function.prototype is itself callable and returns undefined.
-  const fn = new Native(object, { name: "", call: () => undefined })
+  const fn = new Native(object, { name: "", call: () => Effect.undefined })
   const plain = () => new Obj(object)
   const error = plain()
   define(error, "name", "Error", hidden)

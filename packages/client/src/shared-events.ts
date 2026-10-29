@@ -1,14 +1,6 @@
 export * as SharedEvents from "./shared-events.js"
 
-/** The members of event union `A` whose type matches one of `Type`, including `rpc.*` events. */
-export type SelectedEvent<A extends { readonly type: string }, Type extends string> = A extends unknown
-  ? [Extract<Type, A["type"]>] extends [never]
-    ? never
-    : A
-  : never
-
-export type SubscribeOptions<Type extends string = string> = {
-  readonly types?: ReadonlyArray<Type>
+export type SubscribeOptions = {
   readonly signal?: AbortSignal
   /** Reports transport activity on the shared stream, including keepalive frames that carry no event. */
   readonly onActivity?: () => void
@@ -66,21 +58,14 @@ export function make<A extends { readonly type: string }>(
   }
 
   return {
-    subscribe<Type extends Exclude<A["type"], "server.connected"> = Exclude<A["type"], "server.connected">>(
-      options?: SubscribeOptions<Type>,
-    ): AsyncIterable<SelectedEvent<A, Type | "server.connected">> {
+    subscribe(options?: SubscribeOptions): AsyncIterable<A> {
       return {
         [Symbol.asyncIterator]() {
-          // server.connected always comes through so a filtered subscriber still sees reconnects and can resync.
-          type Item = A & SelectedEvent<A, Type | "server.connected">
-          const pending: ReturnType<typeof Promise.withResolvers<IteratorResult<Item>>>[] = []
-          const queued: Item[] = []
+          const pending: ReturnType<typeof Promise.withResolvers<IteratorResult<A>>>[] = []
+          const queued: A[] = []
           let started = false
           let completion: Completion | undefined
           let connection: Connection | undefined
-          const types = options?.types?.length ? new Set<string>(options.types) : undefined
-          const selected = (value: A): value is Item =>
-            !types || value.type === "server.connected" || types.has(value.type)
 
           function finish(result: Completion, discard = true) {
             completion = result
@@ -104,7 +89,6 @@ export function make<A extends { readonly type: string }>(
             },
             push(value) {
               if (completion) return
-              if (!selected(value)) return
               const request = pending.shift()
               if (request) {
                 request.resolve({ done: false, value })
@@ -132,7 +116,7 @@ export function make<A extends { readonly type: string }>(
           }
 
           return {
-            next(): Promise<IteratorResult<Item>> {
+            next(): Promise<IteratorResult<A>> {
               const value = queued.shift()
               if (value) return Promise.resolve({ done: false, value })
               if (completion) {
@@ -143,7 +127,7 @@ export function make<A extends { readonly type: string }>(
                 abort()
                 return Promise.resolve({ done: true, value: undefined })
               }
-              const request = Promise.withResolvers<IteratorResult<Item>>()
+              const request = Promise.withResolvers<IteratorResult<A>>()
               pending.push(request)
               if (!started) {
                 started = true
@@ -152,7 +136,7 @@ export function make<A extends { readonly type: string }>(
               }
               return request.promise
             },
-            return(): Promise<IteratorResult<Item>> {
+            return(): Promise<IteratorResult<A>> {
               finish({})
               return Promise.resolve({ done: true, value: undefined })
             },

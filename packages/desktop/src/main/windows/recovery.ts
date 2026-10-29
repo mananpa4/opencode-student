@@ -4,14 +4,14 @@ import { Effect } from "effect"
 import { DesktopLogging, scoped } from "../native/logging"
 import { nativeT } from "../native/translations"
 import { safeWindowURL } from "./state"
-import { unresponsiveSampler } from "./unresponsive"
+import { makeUnresponsiveSampler } from "./unresponsive"
 
-export const windowRecovery = Effect.gen(function* () {
+export const makeWindowRecovery = Effect.gen(function* () {
   const context = yield* Effect.context()
   const runFork = Effect.runForkWith(context)
   const runPromise = Effect.runPromiseWith(context)
   const logging = yield* DesktopLogging.Service
-  const createUnresponsiveSampler = yield* unresponsiveSampler
+  const createUnresponsiveSampler = yield* makeUnresponsiveSampler
 
   function wireWindowRecovery(win: BrowserWindow, name: string, relaunch: () => void) {
     let showing = false

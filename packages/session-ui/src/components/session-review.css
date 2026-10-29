@@ -5,11 +5,13 @@
   height: 100%;
 
   [data-slot="session-review-scroll"] {
-    display: flex;
     flex: 1 1 auto;
-    flex-direction: column;
     min-height: 0;
-    overflow-y: auto;
+  }
+
+  .scroll-view__viewport {
+    display: flex;
+    flex-direction: column;
   }
 
   [data-slot="session-review-container"] {
@@ -196,7 +198,7 @@
   [data-slot="session-review-change"] {
     font-family: var(--font-family-sans);
     font-size: var(--font-size-small);
-    font-weight: 440;
+    font-weight: var(--font-weight-medium);
   }
 
   [data-slot="session-review-summary-open-file"] {
@@ -205,11 +207,11 @@
   }
 
   [data-slot="session-review-change"][data-type="added"] {
-    color: var(--text-diff-add-base);
+    color: var(--icon-diff-add-base);
   }
 
   [data-slot="session-review-change"][data-type="removed"] {
-    color: var(--text-diff-delete-base);
+    color: var(--icon-diff-delete-base);
   }
 
   [data-slot="session-review-change"][data-type="modified"] {

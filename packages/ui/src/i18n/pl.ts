@@ -206,6 +206,7 @@ export const dict = {
   "ui.question.answer.none": "(brak odpowiedzi)",
   "ui.question.review.notAnswered": "(bez odpowiedzi)",
   "ui.question.multiHint": "Zaznacz wszystkie pasujące",
+  "ui.question.singleHint": "Wybierz jedną odpowiedź",
   "ui.question.custom.placeholder": "Wpisz swoją odpowiedź…",
 
   "ui.fileSearch.placeholder": "Szukaj",

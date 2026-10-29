@@ -172,6 +172,7 @@ const finish = (state: State) => {
       segments: state.segments.length === 0 ? undefined : state.segments,
       words: state.words.length === 0 ? undefined : state.words,
       usage: GeminiGenerateContent.usage(state.usage),
+      notices: GeminiGenerateContent.notices(route.name, state),
       providerMetadata: GeminiGenerateContent.providerMetadata(state),
     }),
   ])

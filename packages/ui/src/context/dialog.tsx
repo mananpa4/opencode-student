@@ -18,7 +18,7 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 
 type DialogElement = () => JSX.Element
 
-type FocusReturn = { element: HTMLElement; visible: boolean; range?: Range }
+type FocusReturn = { element: HTMLElement; range?: Range }
 
 type Active = {
   id: string
@@ -27,8 +27,6 @@ type Active = {
   owner: Owner
   onClose?: () => void
   setClosing: (closing: boolean) => void
-  /** How long the dialog stays mounted once it starts closing, so its exit animation can finish. */
-  exit: () => number
   /** Where focus was before this dialog opened, or before the dialogs it replaced opened. */
   focus?: FocusReturn
   returnFocus: () => void
@@ -36,19 +34,14 @@ type Active = {
 
 const Context = createContext<ReturnType<typeof init>>()
 
-// Lets the dialog rendered in a layer opt out of closing on a backdrop click, or ask for a longer exit animation. A
-// contained layer also says which element holds it, so presses outside that element leave the dialog open.
-const LayerContext = createContext<{
-  setBackdropDismiss: (value: boolean) => void
-  setExitDuration: (ms: number) => void
-  container?: HTMLElement
-}>()
+// Lets the dialog rendered in a layer opt out of closing on a backdrop click.
+const LayerContext = createContext<{ setBackdropDismiss: (value: boolean) => void }>()
 
 export function useDialogLayer() {
   return useContext(LayerContext)
 }
 
-function init(container: () => HTMLElement | undefined) {
+function init() {
   const [stack, setStack] = createSignal<Active[]>([])
   // A dialog is closing from the moment its close starts until its exit animation ends and it is disposed.
   const closing = new Map<string, ReturnType<typeof setTimeout> | undefined>()
@@ -91,7 +84,7 @@ function init(container: () => HTMLElement | undefined) {
         setExiting((ids) => new Set([...ids].filter((id) => id !== current.id)))
         setStack((items) => items.filter((item) => item.id !== current.id))
         current.dispose()
-      }, current.exit()),
+      }, 100),
     )
     setExiting((ids) => new Set([...ids, current.id]))
     isolate(() => current.onClose?.())
@@ -128,11 +121,6 @@ function init(container: () => HTMLElement | undefined) {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
 
-      // Escape in the page around a contained stack belongs to the page.
-      const within = container()
-
-      if (within && event.target instanceof Node && !within.contains(event.target)) return
-
       // A control that cancels its own edit on Escape, such as an inline rename, keeps the dialog open.
       if (event.target instanceof Element && event.target.closest("[data-owns-escape]")) return
       dismiss()
@@ -162,13 +150,9 @@ function init(container: () => HTMLElement | undefined) {
       )
 
     const zIndex = () => String(50 + layer() * 10)
-    // A function, not an inline `&&`: the compiler wraps an inline condition in a memo on every read of the prop, and
-    // Kobalte reads it outside any owner, from outside-pointer handlers and while the closing dialog unmounts.
-    const modal = () => !container() && top()?.id === id
     let dispose: (() => void) | undefined
     let setClosing: ((closing: boolean) => void) | undefined
     let layerRef: HTMLDivElement | undefined
-    let exit = 100
 
     // Stacked dialogs render as sibling portals, so only the top layer may own the focus trap.
     const node = runWithOwner(owner, () =>
@@ -180,13 +164,13 @@ function init(container: () => HTMLElement | undefined) {
 
         return (
           <Kobalte
-            modal={modal()}
+            modal={top()?.id === id}
             open={!closing()}
             onOpenChange={(open: boolean) => {
               if (!open) dismiss(id)
             }}
           >
-            <Kobalte.Portal mount={container()}>
+            <Kobalte.Portal>
               <Kobalte.Overlay
                 data-component="dialog-overlay"
                 style={{ "z-index": zIndex() }}
@@ -207,11 +191,7 @@ function init(container: () => HTMLElement | undefined) {
                   "pointer-events": "none",
                 }}
               >
-                <LayerContext.Provider
-                  value={{ setBackdropDismiss, setExitDuration: (ms) => (exit = ms), container: container() }}
-                >
-                  {element()}
-                </LayerContext.Provider>
+                <LayerContext.Provider value={{ setBackdropDismiss }}>{element()}</LayerContext.Provider>
               </div>
             </Kobalte.Portal>
           </Kobalte>
@@ -228,7 +208,6 @@ function init(container: () => HTMLElement | undefined) {
       owner,
       onClose,
       setClosing,
-      exit: () => exit,
       focus,
       returnFocus: () => {
         // A close inside a reactive update unmounts the dialog, and its focus trap, only when the update ends.
@@ -277,14 +256,12 @@ function captureFocus(): FocusReturn | undefined {
 
   if (!(element instanceof HTMLElement) || element === document.body) return
   const selection = document.getSelection()
-  // Closing with Escape counts as keyboard use, so Chromium would ring a control the pointer had focused.
-  const visible = element.matches(":focus-visible")
 
   if (!element.isContentEditable || !selection?.rangeCount || !element.contains(selection.anchorNode)) {
-    return { element, visible }
+    return { element }
   }
 
-  return { element, visible, range: selection.getRangeAt(0).cloneRange() }
+  return { element, range: selection.getRangeAt(0).cloneRange() }
 }
 
 /** Kobalte only returns focus to a dialog trigger, and these dialogs open without one. */
@@ -295,7 +272,7 @@ function returnFocus(focus: FocusReturn | undefined, layer: HTMLElement | undefi
 
   // Something outside the closed dialog already has focus, for example because the dialog's onClose moved it.
   if (active && active !== document.body && !layer?.contains(active)) return
-  focus.element.focus({ preventScroll: true, focusVisible: focus.visible })
+  focus.element.focus({ preventScroll: true })
 
   if (!focus.range || !focus.element.contains(focus.range.commonAncestorContainer)) return
   const selection = document.getSelection()
@@ -303,12 +280,8 @@ function returnFocus(focus: FocusReturn | undefined, layer: HTMLElement | undefi
   selection?.addRange(focus.range)
 }
 
-/**
- * `container` keeps the dialogs inside one element, as a component preview does: they render in it, non-modal, and the
- * page around it stays usable. The element must be a containing block for fixed positioning (e.g. `contain: layout`).
- */
-export function DialogProvider(props: ParentProps<{ container?: HTMLElement }>) {
-  const ctx = init(() => props.container)
+export function DialogProvider(props: ParentProps) {
+  const ctx = init()
 
   return (
     <Context.Provider value={ctx}>

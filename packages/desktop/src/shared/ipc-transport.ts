@@ -1,4 +1,4 @@
-import type { EnableState } from "@opencode/plugin/gui/host"
+import type { EnableState } from "@opencode/gui-extensions/sdk/bridge"
 
 export const IpcTransportPort = "desktop-rpc-port"
 
@@ -27,7 +27,7 @@ export type StorageSnapshot = Record<string, { items: Record<string, string>; re
 /** The preload's existing startup reply; missing enable state is unknown, not an all-enabled setting. */
 export type WindowSnapshot = {
   storage: StorageSnapshot
-  plugins?: readonly EnableState[]
+  extensions?: readonly EnableState[]
 }
 
 // The namespaces a window reads while its shell mounts. The preload asks for them before the page

@@ -1,5 +1,4 @@
 import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
-import type { Worktree } from "@opencode/schema/worktree"
 import { absoluteColumn } from "../database/path.js"
 import { ProjectSchema } from "../project/schema.js"
 import { ProjectTable } from "../project/sql.js"
@@ -12,7 +11,7 @@ export const WorktreeTable = sqliteTable(
       .notNull()
       .references(() => ProjectTable.id, { onDelete: "cascade" }),
     directory: absoluteColumn().notNull(),
-    strategy: text().$type<Worktree.StrategyID>(),
+    strategy: text(),
     time_created: integer()
       .notNull()
       .$default(() => Date.now()),

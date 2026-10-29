@@ -10,18 +10,21 @@ import {
   ServerConnection,
   useCommand,
   useCurrentRoute,
-  usePluginServers,
+  useLanguage,
+  useExtensionServers,
+  useGlobal,
   useTabs,
   type LayoutRoute,
 } from "@opencode/app/desktop"
 import { useTheme } from "@opencode/ui/theme/context"
 import type { BaseRouterProps } from "@solidjs/router"
-import { createEffect, createMemo, createResource, lazy, Show, Suspense } from "solid-js"
+import { createEffect, createMemo, createResource, lazy, onCleanup, Show, Suspense } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { ElectronAPI } from "./api-types"
 import { DesktopFirstLaunchOnboarding } from "./onboarding"
 import { createDesktopPlatform } from "./platform"
 import { bindDesktopMenu } from "./platform/menu"
+import { emitDeepLinks } from "./startup/deep-links"
 import { createSidecarResolver, initializationData, sidecarHttp } from "./startup/initialization"
 import { preloadStoredLocale } from "./startup/locale"
 import { LoadingSplash } from "./startup/splash"
@@ -82,8 +85,10 @@ export function DesktopApp(props: { api: ElectronAPI; version: string }) {
   })
 
   function ReadyApp() {
-    const pluginServers = usePluginServers()
-    const ready = createMemo(() => !firstLaunch.loading && !sidecar.loading && !locale.loading && pluginServers.ready())
+    const extensions = useExtensionServers()
+    const language = useLanguage()
+
+    const ready = createMemo(() => !firstLaunch.loading && !sidecar.loading && !locale.loading && extensions.ready())
 
     const servers = createMemo(() => {
       const data = initializationData(sidecar)
@@ -91,6 +96,7 @@ export function DesktopApp(props: { api: ElectronAPI; version: string }) {
 
       if (data) {
         list.push({
+          displayName: language.t("desktop.server.local"),
           type: "sidecar",
           variant: "base",
           http: sidecarHttp(data),
@@ -98,7 +104,7 @@ export function DesktopApp(props: { api: ElectronAPI; version: string }) {
         })
       }
 
-      list.push(...pluginServers.list())
+      list.push(...extensions.list())
 
       return list
     })
@@ -183,6 +189,7 @@ function DesktopEffects(props: { api: ElectronAPI }) {
   const command = useCommand()
   bindDesktopMenu((id) => command.trigger(id))
   const theme = useTheme()
+  const global = useGlobal()
 
   createEffect(() => {
     theme.themeId()
@@ -191,6 +198,26 @@ function DesktopEffects(props: { api: ElectronAPI }) {
 
     if (background) void props.api.setBackgroundColor(background)
   })
+
+  // The tray lists the most recent projects across every server. Their order is the renderer's to
+  // own, so main never reads the project list itself.
+  createEffect(() => {
+    const projects = global.servers
+      .list()
+      .flatMap((conn) => global.ensureServerCtx(conn).projects.list())
+      .map((project) => ({
+        name: project.worktree.split(/[\\/]/).filter(Boolean).at(-1) ?? project.worktree,
+        directory: project.worktree,
+      }))
+
+    props.api.setTrayProjects(projects)
+  })
+
+  onCleanup(
+    props.api.onTrayOpenProject((directory) =>
+      emitDeepLinks([`opencode://project?directory=${encodeURIComponent(directory)}`]),
+    ),
+  )
 
   return null
 }

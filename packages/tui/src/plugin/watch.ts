@@ -1,7 +1,6 @@
 import path from "path"
-import { existsSync, type FSWatcher } from "fs"
+import { existsSync, watch } from "fs"
 import { lstat, realpath, stat } from "fs/promises"
-import { safeWatch } from "../util/watch"
 
 // Watch plugin sources for changes. Files are watched through their parent
 // directory (editors that save by rename replace the inode, which silently
@@ -15,7 +14,7 @@ import { safeWatch } from "../util/watch"
 // polled until they can be armed without relying on a racy chain of ancestor
 // watches.
 export function createSourceWatcher(onChange: () => void) {
-  const watchers = new Map<string, FSWatcher>()
+  const watchers = new Map<string, ReturnType<typeof watch>>()
   const watched = new Map<string, Set<string> | null>()
   const missing = new Set<string>()
   const arming = new Map<string, Promise<void>>()
@@ -45,7 +44,7 @@ export function createSourceWatcher(onChange: () => void) {
           if (appeared) notify()
           return
         }
-        const watcher = safeWatch(dir, (_event, filename) => {
+        const watcher = watch(dir, (_event, filename) => {
           // A replaced directory keeps this watcher on the dead inode (Linux
           // emits rename, not error); forget it so a later add() re-arms on
           // the recreated path, and still schedule so reconcile runs now.
@@ -59,9 +58,6 @@ export function createSourceWatcher(onChange: () => void) {
           if (filename && accept && !accept.has(filename.toString())) return
           notify()
         })
-        // Watching is unavailable (opted out or the host refused the watch);
-        // leave this target unwatched instead of claiming it in the maps.
-        if (!watcher) return
         watched.set(dir, name === null ? null : new Set([name]))
         // Reconcile after watcher errors so every source is re-added and any
         // temporarily unavailable target moves into the polling set.

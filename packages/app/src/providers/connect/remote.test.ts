@@ -2,9 +2,9 @@ import { expect, test } from "bun:test"
 import { authServerName } from "./remote"
 
 const contributed = {
-  type: "plugin",
+  type: "extension",
   key: "ssh:production",
-  plugin: "ssh",
+  extension: "ssh",
   state: "ready",
   connecting: false,
   authenticationRequired: false,
@@ -39,7 +39,7 @@ test.each([
   },
   {
     name: "WSL",
-    server: { ...contributed, key: "wsl:Ubuntu", plugin: "wsl", displayName: "Ubuntu" } as const,
+    server: { ...contributed, key: "wsl:Ubuntu", extension: "wsl", displayName: "Ubuntu" } as const,
     expected: "Ubuntu",
   },
   {

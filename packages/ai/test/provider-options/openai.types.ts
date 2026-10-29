@@ -1,4 +1,4 @@
-import { LLM } from "../../src/effect.js"
+import { LLM } from "../../src/index.js"
 import { OpenAI } from "../../src/providers.js"
 
 const selected = OpenAI.responses("gpt-5")

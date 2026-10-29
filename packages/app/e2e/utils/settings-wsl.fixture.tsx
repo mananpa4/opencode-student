@@ -2,13 +2,13 @@ import { MemoryRouter, createMemoryHistory } from "@solidjs/router"
 import { createMemo, Show } from "solid-js"
 import { createStore, unwrap } from "solid-js/store"
 import { render } from "solid-js/web"
-import type { Bridge, BridgeMessage } from "@opencode/plugin/gui/host"
-import type { SshItem, SshState } from "../../../gui-plugins/src/ssh/contract"
-import type { WslServerRuntime, WslServersState } from "../../../gui-plugins/src/wsl/contract"
+import type { Bridge, BridgeMessage } from "@opencode/gui-extensions/sdk/bridge"
+import type { SshItem, SshState } from "../../../gui-extensions/src/ssh/contract"
+import type { WslServerRuntime, WslServersState } from "../../../gui-extensions/src/wsl/contract"
 import { AppBaseProviders, AppInterface } from "../../src/app"
 import { PlatformProvider, type Platform } from "../../src/runtime/platform/platform"
 import { ServerConnection } from "../../src/runtime/server/registry"
-import { usePluginServers } from "../../src/runtime/plugin/servers"
+import { useExtensionServers } from "../../src/runtime/extension/servers"
 
 /** The input of a WSL or SSH method this fixture answers. */
 type FixtureInput = { id?: string; name?: string }
@@ -112,7 +112,7 @@ export function mount(input: {
       },
     })
 
-    // The main-process WSL and SSH plugins, as the plugin bridge sees them.
+    // The main-process WSL and SSH extensions, as the extension bridge sees them.
     const listeners = new Set<(message: BridgeMessage) => void>()
     const snapshot = (ipc: string) => structuredClone(unwrap(ipc === "ssh" ? store.ssh : store.state))
 
@@ -202,12 +202,15 @@ export function mount(input: {
       capture: async () => undefined,
       runMenubarItem: () => undefined,
       configure: () => undefined,
-      pluginGuis: async () => ({ plugins: [], reserved: [] }),
       manager: {
         list: async () => [],
         enable: async () => undefined,
         disable: async () => undefined,
         reload: async () => undefined,
+        install: async () => undefined,
+        remove: async () => undefined,
+        source: async () => "",
+        asset: () => "",
       },
     }
 
@@ -223,21 +226,21 @@ export function mount(input: {
       openDirectoryPickerDialog: async () => null,
       notify: async () => undefined,
       restart: unused,
-      plugins: bridge,
+      extensions: bridge,
     }
 
     if (input.storage === "async") platform.storage = storage
 
     function Interface() {
-      const pluginServers = usePluginServers()
+      const extensions = useExtensionServers()
 
       const servers = createMemo<ServerConnection.Any[]>(() => [
         { type: "sidecar", variant: "base", displayName: "Local Server", http: { url: input.server } },
-        ...pluginServers.list(),
+        ...extensions.list(),
       ])
 
       return (
-        <Show when={pluginServers.ready()}>
+        <Show when={extensions.ready()}>
           <AppInterface servers={servers()} router={(props) => <MemoryRouter {...props} history={history} />} />
         </Show>
       )
@@ -247,7 +250,7 @@ export function mount(input: {
       <PlatformProvider value={platform}>
         <AppBaseProviders locale="en">
           <output aria-label="WSL actions">{store.calls.join(",")}</output>
-          {/* The WSL plugin's main side going away, as on a reload or failure, and coming back. */}
+          {/* The WSL extension's main side going away, as on a reload or failure, and coming back. */}
           <label>
             <input
               type="checkbox"
@@ -260,9 +263,9 @@ export function mount(input: {
                 if (available) publish("wsl")
               }}
             />
-            WSL plugin
+            WSL extension
           </label>
-          {/* The SSH plugin's main side going away and coming back. */}
+          {/* The SSH extension's main side going away and coming back. */}
           <label>
             <input
               type="checkbox"
@@ -274,7 +277,7 @@ export function mount(input: {
                 if (available) publish("ssh")
               }}
             />
-            SSH plugin
+            SSH extension
           </label>
           {/* The SSH tunnel dropping, which only main notices. */}
           <Show when={input.ssh}>

@@ -93,7 +93,7 @@
   }
 }
 
-:root[data-motion="reduce"] {
+@media (prefers-reduced-motion: reduce) {
   [data-component="tool-count-summary"] [data-slot="tool-count-summary-empty"],
   [data-component="tool-count-summary"] [data-slot="tool-count-summary-item"],
   [data-component="tool-count-summary"] [data-slot="tool-count-summary-prefix"] {

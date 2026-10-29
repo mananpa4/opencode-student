@@ -11,7 +11,7 @@ import {
   ToolChoice,
   ToolOutput,
   toDefinitions,
-} from "../src/effect.js"
+} from "../src/index.js"
 import { Auth, LLMClient } from "../src/route.js"
 import * as AnthropicMessages from "../src/protocols/anthropic-messages.js"
 import * as OpenAIChat from "../src/protocols/openai-chat.js"

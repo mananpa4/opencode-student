@@ -168,7 +168,6 @@ const layer = Layer.effect(
       const changed = yield* git.tree
         .files({ repository: compared.repository, from: compared.from, to: compared.to })
         .pipe(Effect.mapError((cause) => failure("files", cause)))
-      if (changed.length === 0) return []
       const skipped = yield* ignored("files", compared.source, changed)
       return changed.filter((file) => !skipped.has(file))
     })
@@ -186,10 +185,12 @@ const layer = Layer.effect(
           paths: input.paths,
         })
         .pipe(Effect.mapError((cause) => failure("diff", cause)))
-      if (diffs.length === 0) return []
-      const paths = diffs.map((file) => RelativePath.make(file.file))
-      const skipped = yield* ignored("diff", compared.source, paths)
-      return diffs.filter((_, index) => !skipped.has(paths[index]!))
+      const skipped = yield* ignored(
+        "diff",
+        compared.source,
+        diffs.map((file) => RelativePath.make(file.file)),
+      )
+      return diffs.filter((file) => !skipped.has(RelativePath.make(file.file)))
     })
 
     const plan = Effect.fnUntraced(function* (worktree: AbsolutePath, input: RestoreInput) {

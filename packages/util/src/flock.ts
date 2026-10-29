@@ -3,6 +3,7 @@ import os from "os"
 import { randomBytes, randomUUID } from "crypto"
 import { mkdir, readFile, rm, stat, utimes, writeFile } from "fs/promises"
 import { Hash } from "./hash.js"
+import { Effect } from "effect"
 
 export type FlockGlobal = {
   state: string
@@ -343,4 +344,15 @@ export namespace Flock {
     input.signal?.throwIfAborted()
     return await fn()
   }
+
+  export const effect = Effect.fn("Flock.effect")(function* (key: string, input: Options = {}) {
+    return yield* Effect.acquireRelease(
+      Effect.promise((signal) => Flock.acquire(key, { ...input, signal })).pipe(
+        Effect.withSpan("Flock.acquire", {
+          attributes: { key },
+        }),
+      ),
+      (lock) => Effect.promise(() => lock.release()).pipe(Effect.withSpan("Flock.release")),
+    ).pipe(Effect.asVoid)
+  })
 }

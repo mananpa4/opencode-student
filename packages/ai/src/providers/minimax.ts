@@ -125,9 +125,9 @@ export const configure = (input: Config = {}) => {
 
 export const provider = configure()
 
-export const model: ProviderPackage.Model<Settings<MessagesOptionsInput>, MessagesOptionsInput> = (
+export const model: ProviderPackage.Definition<Settings<MessagesOptionsInput>, MessagesOptionsInput>["model"] = (
   modelID,
-  { apiKey, baseURL, body, headers, ...providerOptions }: Settings<MessagesOptionsInput> = {},
+  { apiKey, baseURL, body, headers, ...providerOptions },
 ) =>
   configure({
     apiKey,

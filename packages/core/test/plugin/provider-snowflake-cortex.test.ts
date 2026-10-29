@@ -1,4 +1,4 @@
-import { Message } from "@opencode/ai/effect"
+import { Message } from "@opencode/ai"
 import { LLMClient, RequestExecutor } from "@opencode/ai/route"
 import { Agent } from "@opencode/core/agent"
 import { Credential } from "@opencode/core/credential"

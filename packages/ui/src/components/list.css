@@ -278,7 +278,7 @@
             left: var(--list-divider-inset, 16px);
             right: var(--list-divider-inset, 16px);
             height: 1px;
-            background: var(--v2-border-border-muted);
+            background: var(--border-weak-base);
             pointer-events: none;
           }
 

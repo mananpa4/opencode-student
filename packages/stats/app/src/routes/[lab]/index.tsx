@@ -15,7 +15,6 @@ import { LocaleLinks } from "../../component/locale-links"
 import { NotFoundMeta } from "../../component/not-found-meta"
 import { useI18n } from "../../context/i18n"
 import { useLanguage } from "../../context/language"
-import { dismissChartTooltipOnExit } from "../../lib/chart-tooltip"
 import { fromFirstUsage } from "../../lib/format"
 import { localizedUrl } from "../../lib/language"
 import { loadLabPage, type LabPageData } from "../../lib/page-data"
@@ -330,12 +329,6 @@ function LabUsageSection(props: { lab: ModelCatalogLab; data: StatsLabData | nul
   const activeLineClipId = createUniqueId()
   const activeLineMaskId = createUniqueId()
   const [activeIndex, setActiveIndex] = createSignal<number>()
-  let chartRef: HTMLDivElement | undefined
-  dismissChartTooltipOnExit({
-    chart: () => chartRef,
-    open: () => activeIndex() !== undefined,
-    dismiss: () => setActiveIndex(undefined),
-  })
   const usage = createMemo(() => props.data?.usage ?? [])
   const tokenMax = createMemo(() => Math.max(0, ...usage().map((item) => item.tokens)) || 1)
   const userMax = createMemo(() => Math.max(0, ...usage().map((item) => item.users)) || 1)
@@ -388,7 +381,6 @@ function LabUsageSection(props: { lab: ModelCatalogLab; data: StatsLabData | nul
         fallback={<LabEmptyState title={i18n.t("lab.noUsageTitle")} description={i18n.t("lab.noUsageDescription")} />}
       >
         <div
-          ref={chartRef}
           data-component="model-usage-chart"
           data-variant="lab-usage"
           data-dense-labels={isLabUsageDense(usage().length) ? "true" : undefined}

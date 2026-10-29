@@ -23,7 +23,6 @@ import { ReferenceHandler } from "./handlers/reference"
 import { LocationHandler } from "./handlers/location"
 import { IntegrationHandler } from "./handlers/integration"
 import { WebSearchHandler } from "./handlers/websearch"
-import { UsageHandler } from "./handlers/usage"
 import { McpHandler } from "./handlers/mcp"
 import { CredentialHandler } from "./handlers/credential"
 import { ProjectHandler } from "./handlers/project"
@@ -31,12 +30,14 @@ import { WorktreeHandler } from "./handlers/worktree"
 import { VcsHandler } from "./handlers/vcs"
 import { EventFeed } from "./event-feed"
 import { MigrationHandler } from "./handlers/migration"
+import { DatabaseHandler } from "./handlers/database"
 import { ConfigHandler } from "./handlers/config"
 
 export const handlers = Layer.mergeAll(
   ServerHandler,
   DebugHandler,
   MigrationHandler,
+  DatabaseHandler,
   LocationHandler,
   AgentHandler,
   PluginHandler,
@@ -48,7 +49,6 @@ export const handlers = Layer.mergeAll(
   ProviderHandler,
   IntegrationHandler,
   WebSearchHandler,
-  UsageHandler,
   McpHandler,
   CredentialHandler,
   ProjectHandler,

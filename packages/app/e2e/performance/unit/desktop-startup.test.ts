@@ -12,7 +12,7 @@ describe("desktop startup benchmark", () => {
   test("recognizes startup milestones in colored output", () => {
     const cases = [
       ["bunRootScript", "$ bun --cwd packages/desktop dev"],
-      ["bunDesktopScript", "$ bun run script/dev.ts"],
+      ["bunDesktopScript", "$ bun ./scripts/dev.ts"],
       ["desktopPrepared", "Copied dev icons from"],
       ["mainBundleReady", "electron main process built successfully"],
       ["preloadBundleReady", "electron preload scripts built successfully"],

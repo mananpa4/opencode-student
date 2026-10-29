@@ -195,6 +195,7 @@ export const dict = {
   "ui.question.answer.none": "(ບໍ່​ມີ​ຄໍາ​ຕອບ​)",
   "ui.question.review.notAnswered": "(ບໍ່ຕອບ)",
   "ui.question.multiHint": "ເລືອກຄຳຕອບທັງໝົດທີ່ນຳໃຊ້",
+  "ui.question.singleHint": "ເລືອກຫນຶ່ງຄໍາຕອບ",
   "ui.question.custom.placeholder": "ພິມຄຳຕອບຂອງເຈົ້າ…",
   "ui.tool.loadedFile": "ໂຫຼດ {{path}} ແລ້ວ",
   "ui.tool.loadedSkill": "ໂຫຼດທັກສະ {{name}} ແລ້ວ",

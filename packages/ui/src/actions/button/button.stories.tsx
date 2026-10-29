@@ -5,7 +5,7 @@ const docs = `### Overview
 Button v2 with visual variants and three sizes.
 
 ### API
-- \`variant\`: "neutral" | "danger" | "warning" | "contrast" | "submit" | "ghost" | "ghost-muted" | "ghost-faint" | "ghost-danger" | "loading".
+- \`variant\`: "neutral" | "danger" | "warning" | "contrast" | "submit" | "ghost" | "ghost-muted" | "ghost-faint" | "loading".
 - \`submit\` shares the brighter contrast icon-button styling for Composer submission actions.
 - \`size\`: "small" | "normal" | "large".
 - \`icon\`: Optional icon name.
@@ -41,18 +41,7 @@ export default {
     },
     variant: {
       control: "select",
-      options: [
-        "neutral",
-        "danger",
-        "warning",
-        "contrast",
-        "submit",
-        "ghost",
-        "ghost-muted",
-        "ghost-faint",
-        "ghost-danger",
-        "loading",
-      ],
+      options: ["neutral", "danger", "warning", "contrast", "submit", "ghost", "ghost-muted", "ghost-faint", "loading"],
     },
     size: {
       control: "select",
@@ -85,7 +74,6 @@ export const Variants = {
       <Button variant="ghost-faint" icon="edit">
         Ghost faint
       </Button>
-      <Button variant="ghost-danger">Ghost danger</Button>
       <Button variant="loading">Loading</Button>
     </div>
   ),

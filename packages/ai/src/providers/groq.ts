@@ -20,7 +20,7 @@ export type ProviderOptions = Pick<OpenAIProviderOptionsInput, "reasoningEffort"
   readonly user?: string
 }
 
-export type Config = Omit<RouteDefaultsInput, "providerOptions"> &
+export type LanguageModelOptions = Omit<RouteDefaultsInput, "providerOptions"> &
   ProviderAuthOption<"optional"> & {
     readonly baseURL?: string
     readonly providerOptions?: ProviderOptions
@@ -34,6 +34,8 @@ export type Settings = ProviderPackage.Settings &
 
 const Options = Schema.Struct({
   includeReasoning: Schema.optional(Schema.Boolean),
+  parallelToolCalls: Schema.optional(Schema.Boolean),
+  serviceTier: Schema.optional(Schema.String),
   user: Schema.optional(Schema.String),
 })
 
@@ -44,6 +46,8 @@ export const protocol = Protocol.make({
       ...OpenAIChat.bodyFields,
       reasoning_format: Schema.optional(Schema.Literal("parsed")),
       include_reasoning: Schema.optional(Schema.Boolean),
+      parallel_tool_calls: Schema.optional(Schema.Boolean),
+      service_tier: Schema.optional(Schema.String),
       user: Schema.optional(Schema.String),
     }),
     from: Effect.fn("Groq.fromRequest")(function* (request: LLMRequest) {
@@ -55,6 +59,8 @@ export const protocol = Protocol.make({
         ...(yield* OpenAIChat.fromRequest(request)),
         reasoning_format: gptOSS ? undefined : ("parsed" as const),
         include_reasoning: gptOSS ? options.includeReasoning : undefined,
+        parallel_tool_calls: options.parallelToolCalls,
+        service_tier: options.serviceTier,
         user: options.user,
       }
     }),
@@ -71,7 +77,7 @@ export const route = Route.make({
   framing: OpenAIChat.framing,
 })
 
-export const configure = (input: Config = {}) => {
+export const configure = (input: LanguageModelOptions = {}) => {
   const { apiKey: _apiKey, auth: _auth, baseURL: endpoint, ...defaults } = input
   const configured = route.with({
     ...defaults,
@@ -96,9 +102,9 @@ export const configure = (input: Config = {}) => {
 
 export const provider = configure()
 
-export const model: ProviderPackage.Model<Settings, ProviderOptions> = (
+export const model: ProviderPackage.Definition<Settings, ProviderOptions>["model"] = (
   modelID,
-  { apiKey, baseURL, body, headers, ...providerOptions }: Settings = {},
+  { apiKey, baseURL, body, headers, ...providerOptions },
 ) =>
   configure({
     apiKey,

@@ -7,16 +7,14 @@ export function createImagePreview() {
   const i18n = useI18n()
 
   const open = (event: MouseEvent | KeyboardEvent) => {
-    const image = event.currentTarget
-
-    if (!(image instanceof HTMLImageElement)) return
-    const src = image.currentSrc || image.getAttribute("src")
+    if (!(event.currentTarget instanceof HTMLImageElement)) return
+    const src = event.currentTarget.currentSrc || event.currentTarget.getAttribute("src")
 
     if (!src) return
-    const alt = image.alt || i18n.t("ui.imagePreview.alt")
+    const alt = event.currentTarget.alt || i18n.t("ui.imagePreview.alt")
     event.preventDefault()
     event.stopPropagation()
-    dialog.show(() => <ImagePreview src={src} alt={alt} origin={image} />)
+    dialog.show(() => <ImagePreview src={src} alt={alt} />)
   }
 
   return (root: HTMLElement) => {

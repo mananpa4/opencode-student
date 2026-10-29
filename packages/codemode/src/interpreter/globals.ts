@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { Arr, Callable, coerceToInteger, coerceToString, get, Obj, type Value } from "./objects.js"
 import { arrayGlobal } from "../stdlib/array.js"
 import { textDecoderGlobal, textEncoderGlobal, uint8ArrayGlobal } from "../stdlib/bytes.js"
@@ -27,32 +28,29 @@ import type { Interpreter } from "./interpreter.js"
 
 // Function.prototype.constructor exists so `fn.constructor === Function` holds; dynamic code is unsupported.
 const functionGlobal = <R>(ctx: Interpreter<R>) => {
-  const reject = () => {
-    throw typeError("The Function constructor is not supported; write the function inline.")
-  }
+  const reject = () =>
+    Effect.sync(() => {
+      throw typeError("The Function constructor is not supported; write the function inline.")
+    })
   const target = (thisValue: Value, method: string) => receiver(Callable, thisValue, `Function.prototype.${method}`)
   methods(ctx.builtins, ctx.builtins.Function, [
-    ["call", 1, (thisValue, args, site) => ctx.call(target(thisValue, "call"), args[0], args.slice(1), site)],
-    [
-      "apply",
-      2,
-      (thisValue, args, site) => ctx.call(target(thisValue, "apply"), args[0], listFromArrayLike(args[1]), site),
-    ],
+    ["call", 1, (thisValue, args) => ctx.call(target(thisValue, "call"), args[0], args.slice(1))],
+    ["apply", 2, (thisValue, args) => ctx.call(target(thisValue, "apply"), args[0], listFromArrayLike(args[1]))],
     [
       "bind",
       1,
       (thisValue, args) => {
         const fn = target(thisValue, "bind")
         const bound = args.slice(1)
-        return native(ctx.builtins, {
+        return native<R>(ctx.builtins, {
           name: `bound ${coerceToString(get(fn, "name"))}`,
           length: Math.max(0, fn.length - bound.length),
-          call: (_, rest, site) => ctx.call(fn, args[0], [...bound, ...rest], site),
+          call: (_, rest) => ctx.call(fn, args[0], [...bound, ...rest]),
         })
       },
     ],
   ])
-  return constructor(ctx.builtins, ctx.builtins.Function, {
+  return constructor<R>(ctx.builtins, ctx.builtins.Function, {
     name: "Function",
     length: 1,
     call: reject,
@@ -71,11 +69,12 @@ const listFromArrayLike = (value: Value): Array<Value> => {
 }
 
 const symbolGlobal = <R>(ctx: Interpreter<R>) => {
-  const symbol = native(ctx.builtins, {
+  const symbol = native<R>(ctx.builtins, {
     name: "Symbol",
-    call: () => {
-      throw typeError("Symbol is not callable; only Symbol.asyncIterator and Symbol.iterator are available.")
-    },
+    call: () =>
+      Effect.sync(() => {
+        throw typeError("Symbol is not callable; only Symbol.asyncIterator and Symbol.iterator are available.")
+      }),
     callback: false,
   })
   constants(symbol, { asyncIterator: AsyncIteratorSymbol, iterator: IteratorSymbol })

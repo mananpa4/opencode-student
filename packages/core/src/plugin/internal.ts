@@ -1,6 +1,6 @@
 export * as PluginInternal from "./internal.js"
 
-import { LLMClient } from "@opencode/ai/effect"
+import { LLMClient } from "@opencode/ai"
 import type { Plugin } from "@opencode/plugin/effect/plugin"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { httpClient } from "@opencode/util/effect/app-node-platform"
@@ -50,6 +50,7 @@ import { Integration } from "../integration.js"
 import { Job } from "../job.js"
 import { KV } from "../kv.js"
 import { Location } from "../location.js"
+import { ManagedPolicy } from "../managed-policy.js"
 import { ModelsDev } from "../models-dev.js"
 import { Mcp } from "../mcp/index.js"
 import { Npm } from "@opencode/util/npm"
@@ -130,6 +131,7 @@ const services = [
   KV.Service,
   LLMClient.Service,
   Location.Service,
+  ManagedPolicy.Service,
   ModelsDev.Service,
   Mcp.Service,
   Npm.Service,
@@ -183,6 +185,7 @@ export const requirements = LayerNode.group([
   KV.node,
   llmClient,
   Location.node,
+  ManagedPolicy.node,
   ModelsDev.node,
   Mcp.node,
   Npm.node,

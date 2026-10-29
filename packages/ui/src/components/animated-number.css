@@ -88,7 +88,7 @@
   }
 }
 
-:root[data-motion="reduce"] {
+@media (prefers-reduced-motion: reduce) {
   [data-component="animated-number"] [data-slot="animated-number-value"][data-resizing] {
     transition-duration: 0ms;
   }

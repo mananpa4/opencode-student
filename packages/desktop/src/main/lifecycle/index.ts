@@ -8,7 +8,7 @@ import { emitIpcEvent } from "../ipc-events"
 import { DesktopLogging, scoped } from "../native/logging"
 import { DesktopStorage } from "../storage"
 import { safeWebContentsURL } from "../windows/state"
-import { getLastFocusedWindow, getWindowByID, mainWindows, setAppQuitting, setRelaunchHandler } from "../windows"
+import { getLastFocusedWindow, getWindowByID, makeMainWindows, setAppQuitting, setRelaunchHandler } from "../windows"
 import { marks } from "./marks"
 import { initializeFirstLaunchOnboarding } from "./onboarding"
 import { Shutdown } from "./shutdown"
@@ -29,21 +29,12 @@ const runtime = Layer.effect(
   Effect.gen(function* () {
     const shutdown = yield* Shutdown.Service
     const runFork = Effect.runForkWith(yield* Effect.context())
-    const windows = yield* mainWindows()
+    const windows = yield* makeMainWindows()
     const createWindow = windows.create
     const restoreWindows = windows.restore
     const pendingDeepLinks: string[] = []
     let shutdownReady = false
-    let quitRequested = false
-
-    // A hung shutdown step would otherwise leave every quit waiting on it forever.
-    const prepareToRestart = shutdown.run.pipe(
-      Effect.timeoutOrElse({
-        duration: "10 seconds",
-        orElse: () => Effect.logError("shutdown timed out, quitting anyway"),
-      }),
-      Effect.ensuring(Effect.sync(() => (shutdownReady = true))),
-    )
+    const prepareToRestart = shutdown.run.pipe(Effect.ensuring(Effect.sync(() => (shutdownReady = true))))
 
     const focusWindow = (win: BrowserWindow | null) => {
       if (!win) return
@@ -103,15 +94,11 @@ const runtime = Layer.effect(
     }
 
     const beforeQuit = (event: Event) => {
-      quitRequested = true
       setAppQuitting()
 
       if (shutdownReady) return
       event.preventDefault()
-      // Electron records the cancelled quit only after this event returns. A shutdown with nothing to
-      // stop finishes in a microtask, so re-quitting from it would be overwritten and the app would
-      // stay alive with no windows. Re-quit on the next tick instead.
-      runFork(prepareToRestart.pipe(Effect.ensuring(Effect.sync(() => setImmediate(() => app.quit())))))
+      runFork(prepareToRestart.pipe(Effect.ensuring(Effect.sync(() => app.quit()))))
     }
 
     const willQuit = () => {
@@ -138,14 +125,11 @@ const runtime = Layer.effect(
       runFork(prepareToRestart.pipe(Effect.ensuring(Effect.sync(() => app.quit()))))
     }
 
-    // Electron emits this instead of will-quit when it lost track of a quit, so finish the one we asked for.
     const windowAllClosed = () => {
-      if (quitRequested || process.platform !== "darwin") app.quit()
+      if (process.platform !== "darwin") app.quit()
     }
 
     const activate = () => {
-      if (quitRequested) return
-
       if (BrowserWindow.getAllWindows().length === 0) restoreWindows()
     }
 

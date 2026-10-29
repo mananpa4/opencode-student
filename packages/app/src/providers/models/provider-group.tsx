@@ -20,7 +20,7 @@ type ModelGroup<T> = { category: string; items: T[] }
 
 export const CONSOLE_GROUP_KEY = "console:opencode"
 
-function CustomManagedProviderIcon(props: { class?: string }) {
+export function CustomManagedProviderIcon(props: { class?: string }) {
   return <img data-component="custom-managed-provider-icon" src={customManagedProvider} alt="" class={props.class} />
 }
 
@@ -239,9 +239,7 @@ export function ProviderModelGroup(props: {
                 />
                 <Menu.Portal>
                   <Menu.Content>
-                    <Menu.Item onSelect={() => setVisibility(true)}>
-                      {language.t("settings.models.enableAll")}
-                    </Menu.Item>
+                    <Menu.Item onSelect={() => setVisibility(true)}>{language.t("settings.models.enableAll")}</Menu.Item>
                     <Menu.Item onSelect={() => setVisibility(false)}>
                       {language.t("settings.models.disableAll")}
                     </Menu.Item>

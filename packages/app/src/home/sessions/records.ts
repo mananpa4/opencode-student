@@ -35,6 +35,7 @@ export function buildHomeSessionRecords(input: {
         homeProjectForSession(session, input.projects()) ?? {
           id: session.projectID,
           worktree: session.location.directory,
+          expanded: false,
         }
 
       return { session, project, projectName: displayName(project) }

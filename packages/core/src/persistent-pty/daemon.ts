@@ -4,7 +4,6 @@ import net from "node:net"
 import path from "node:path"
 import { Cause, Data, Duration, Effect, Schema, Semaphore } from "effect"
 import type { Handoff } from "@opencode/schema/persistent-pty"
-import { Session } from "@opencode/schema/session"
 
 const ProtocolVersion = 7
 const MaxFrameBytes = 8 * 1024 * 1024
@@ -20,7 +19,7 @@ export const WireTerminal = Schema.Struct({
   pid: Schema.NullOr(Schema.Number),
   title: Schema.String,
   foreground_process: Schema.NullOr(Schema.String),
-  group_id: Session.ID,
+  group_id: Schema.String,
   command: Schema.Array(Schema.String),
   cwd: Schema.String,
   cols: Schema.Number,
@@ -682,10 +681,8 @@ async function* decoder(socket: net.Socket) {
   if (pending.length !== 0) throw new Error("opencode-pty truncated frame")
 }
 
-const decodeWireResponse = Schema.decodeUnknownSync(Schema.fromJsonString(WireResponse))
-
 function decode(payload: Uint8Array) {
-  return decodeWireResponse(Buffer.from(payload).toString("utf8"))
+  return Schema.decodeUnknownSync(WireResponse)(JSON.parse(Buffer.from(payload).toString("utf8")))
 }
 
 function failure(kind: DaemonError["kind"], cause: unknown) {

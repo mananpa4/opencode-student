@@ -5,20 +5,13 @@ import { getOwner, onCleanup, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/runtime/i18n/language"
 import { type ServerSDK } from "./client"
-import {
-  bootstrapDirectory,
-  bootstrapGlobal,
-  loadGlobalConfigQuery,
-  loadPathQuery,
-  loadProjects,
-  loadProjectsQuery,
-} from "./global-sync/bootstrap"
+import { bootstrapDirectory, bootstrapGlobal, loadGlobalConfigQuery, loadPathQuery } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
 import type { ProjectMeta } from "./global-sync/types"
 import { formatServerError } from "@/runtime/server/errors"
 import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/solid-query"
 import { createRefreshQueue } from "./global-sync/queue"
-import { directoryKey, normalizeProjectInfo, updateProjectInfo } from "./global-sync/utils"
+import { directoryKey, updateProjectInfo } from "./global-sync/utils"
 import { PathKey } from "@/workspaces/path-key"
 import type { ServerScope } from "@/runtime/server/scope"
 import { persisted } from "@/runtime/persistence/storage"
@@ -37,7 +30,7 @@ type GlobalStore = {
   reload: undefined | "pending" | "complete"
 }
 
-const loadLspQuery = (scope: ServerScope, directory: string) =>
+export const loadLspQuery = (scope: ServerScope, directory: string) =>
   queryOptions({
     queryKey: [scope, directory, "lsp"] as const,
     // TODO: Restore LSP status when the V2 client exposes an LSP API.
@@ -54,7 +47,7 @@ function makeQueryOptionsApi(scope: ServerScope, serverAPI: () => ServerApi) {
 
 export type QueryOptionsApi = ReturnType<typeof makeQueryOptionsApi>
 
-function createServerSyncContextInner(serverSDK: ServerSDK, data: Data) {
+export function createServerSyncContextInner(serverSDK: ServerSDK, data: Data) {
   const language = useLanguage()
   const platform = usePlatform()
   const owner = getOwner()
@@ -184,7 +177,7 @@ function createServerSyncContextInner(serverSDK: ServerSDK, data: Data) {
         refetchType: "none",
       })
     },
-    connected: () => {
+    connected: (info) => {
       if (bootstrap.data !== undefined && !bootstrap.isFetching) void bootstrap.refetch()
       // The refresh queue re-syncs two directories at a time, held ones first. Syncing every active
       // directory here as well sent the whole catalog fan-out for all of them at once.
@@ -235,35 +228,16 @@ function createServerSyncContextInner(serverSDK: ServerSDK, data: Data) {
     return promise
   }
 
-  // Mirrors the server's list: unarchived projects, most recently active first. Unknown projects join the list and
-  // archived ones leave it.
   function applyProjectUpdate(update: Parameters<typeof updateProjectInfo>[1]) {
-    setGlobalStore("project", (projects) => {
-      const rest = projects.filter((project) => project.id !== update.id)
-
-      if (update.time.archived) return rest
-
-      const previous = projects.find((project) => project.id === update.id)
-      // The wire payload carries no worktrees; keep the inventory this project already loaded.
-      const next = withWorktreeInventory(
-        previous ? updateProjectInfo(previous, update) : normalizeProjectInfo(update),
-        worktrees.cached(update.id),
-      )
-
-      return [...rest, next].toSorted(
-        (a, b) => b.time.active - a.time.active || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
-      )
-    })
+    setGlobalStore("project", (projects) =>
+      projects.map((project) =>
+        project.id === update.id
+          ? // The wire payload carries no worktrees; keep the inventory this project already loaded.
+            withWorktreeInventory(updateProjectInfo(project, update), worktrees.cached(update.id))
+          : project,
+      ),
+    )
   }
-
-  // Observes the list the bootstrap loads without fetching it again, so readers can tell "no projects" from "not loaded".
-  const projectsQuery = useQuery(() => ({
-    ...loadProjectsQuery(serverSDK.scope, serverSDK.api.project),
-    enabled: false,
-  }))
-
-  const refreshProjects = () =>
-    loadProjects({ scope: serverSDK.scope, project: serverSDK.api.project, setGlobalStore, queryClient })
 
   const unsub = serverSDK.event.listen((event) => {
     connection.handleEvent({ type: event.type })
@@ -286,7 +260,7 @@ function createServerSyncContextInner(serverSDK: ServerSDK, data: Data) {
     const directory = event.location.directory
     const key = directoryKey(directory)
 
-    if (!children.active(key)) return
+    if (!children.children[key]) return
     children.mark(key)
 
     if (event.type === "config.updated" || event.type === "agent.updated") queue.push(key)
@@ -304,10 +278,11 @@ function createServerSyncContextInner(serverSDK: ServerSDK, data: Data) {
 
   const projectApi = {
     update: applyProjectUpdate,
-    ready: () => projectsQuery.isSuccess,
-    refresh: refreshProjects,
     meta(directory: string, patch: ProjectMeta) {
       children.projectMeta(directory, patch)
+    },
+    icon(directory: string, value: string | undefined) {
+      children.projectIcon(directory, value)
     },
   }
 

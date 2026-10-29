@@ -104,23 +104,19 @@ const layer = Layer.effect(
         list: () => Array.from(editor.skills.values()),
         get: (id) => editor.skills.get(ID.make(id)),
         add: (skill) => {
-          editor.skills.set(skill.id, { ...skill })
+          editor.skills.set(skill.id, { ...skill } as Types.DeepMutable<Info>)
         },
         update: (id, update) => {
-          const key = ID.make(id)
-          const current = editor.skills.get(key)
+          const current = editor.skills.get(ID.make(id))
           if (!current) return
           update(current)
-          current.id = key
+          current.id = ID.make(id)
         },
         remove: (id) => {
           editor.skills.delete(ID.make(id))
         },
       }),
-      notify: State.changes(
-        (data) => Array.from(data.skills.values()),
-        () => bus.publish(Skill.Event.Updated, {}).pipe(Effect.asVoid),
-      ),
+      notify: () => bus.publish(Skill.Event.Updated, {}).pipe(Effect.asVoid),
     })
 
     return Service.of({

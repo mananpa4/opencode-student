@@ -1,3 +1,4 @@
+import { debounce } from "@solid-primitives/scheduled"
 import { createEffect, createMemo, createResource, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useWorkspaceLocation } from "@/workspaces/location"
@@ -13,7 +14,6 @@ import {
   isWorkspaceSelection,
   workspaceDefaultSelection,
   workspaceSelectionDestination,
-  workspaceSelectionDirectories,
 } from "@/workspaces/paths"
 
 export function resolveNewSessionWorktree(input: { enabled: boolean; selected?: string; fallback?: string }) {
@@ -53,6 +53,7 @@ export function createNewSessionWorkspaceController(input: {
   selectedBranch: () => string | undefined
   setSelectedWorktree: (worktree: string | undefined) => void
   setSelectedBranch: (branch: string | undefined) => void
+  onViewAll: () => void
 }) {
   const sdk = useWorkspaceLocation()
   const serverSDK = useServerSDK()
@@ -60,7 +61,12 @@ export function createNewSessionWorkspaceController(input: {
   const settings = useSettings()
   const tabs = useTabs()
 
-  const [state, setState] = createStore<{ existing?: { projectID: string; directory: string } }>({})
+  const [state, setState] = createStore({
+    search: "",
+    existing: undefined as { projectID: string; directory: string } | undefined,
+  })
+
+  const searchBranches = debounce((search: string) => setState("search", search.trim()), 100)
 
   const currentProject = createMemo(() => {
     const projectID = data.location.info({ directory: sdk().directory })?.project.id
@@ -113,7 +119,15 @@ export function createNewSessionWorkspaceController(input: {
 
     if (!project) return []
 
-    return workspaceSelectionDirectories(project, worktreeItems())
+    const directories = [
+      ...worktreeItems().map((item) => item.directory),
+      ...project.worktrees.map((item) => item.directory),
+      ...(project.sandboxes ?? []),
+    ]
+
+    return directories
+      .filter((directory) => !sameDirectory(project.worktree, directory))
+      .filter((directory, index, items) => items.findIndex((item) => sameDirectory(item, directory)) === index)
   })
 
   const managedWorktrees = createMemo(() => {
@@ -168,7 +182,15 @@ export function createNewSessionWorkspaceController(input: {
   )
 
   const projectRoot = createMemo(() => currentProject()?.worktree ?? sdk().directory)
-  const branchDirectory = () => (value() === "create" ? projectRoot() : sdk().directory)
+
+  const [branches] = createResource(
+    () => (visible() ? { directory: projectRoot(), search: state.search } : undefined),
+    ({ directory, search }) =>
+      serverSDK.api.vcs
+        .branch.list({ location: { directory }, search, limit: 50 })
+        .then((response) => ({ directory, search, data: response.data }))
+        .catch(() => ({ directory, search, data: [] })),
+  )
 
   createEffect(() => {
     void Promise.all([
@@ -176,10 +198,6 @@ export function createNewSessionWorkspaceController(input: {
       data.project.sync(),
       data.location.vcs.sync({ directory: sdk().directory }),
     ]).catch(() => undefined)
-  })
-  createEffect(() => {
-    if (value() !== "create" || sameDirectory(projectRoot(), sdk().directory)) return
-    void data.location.vcs.sync({ directory: projectRoot() }).catch(() => undefined)
   })
   // Only the selected worktree feeds the branch label. Syncing every worktree in the inventory boots
   // each one on the server, which then emits `agent.updated` and makes the client run the full
@@ -197,7 +215,7 @@ export function createNewSessionWorkspaceController(input: {
   const branch = createMemo(() =>
     resolveNewSessionBranch({
       worktree: value(),
-      directory: branchDirectory(),
+      directory: sdk().directory,
       createBranch: input.selectedBranch(),
       worktreeBranch: (worktree) => data.location.vcs.info({ directory: worktree })?.branch.current,
     }),
@@ -252,23 +270,37 @@ export function createNewSessionWorkspaceController(input: {
       },
       remember,
       set: select,
-      branch: (branch: string) => input.setSelectedBranch(branch),
       cycle: () => select(cycleNewSessionWorktree({ current: value(), existing: existing() })),
+      create: (branch: string) => {
+        input.setSelectedBranch(branch)
+        input.setSelectedWorktree("create")
+        remember("create")
+      },
     },
     project: {
       root: projectRoot,
       workspaces: worktreeDirectories,
       managed: managedWorktrees,
       git: visible,
+      branches: () => {
+        const current = data.location.vcs.info({ directory: sdk().directory })?.branch.current
+        const loaded = branches.latest
+        const list = loaded?.directory === projectRoot() ? loaded.data : []
+
+        return [
+          ...new Set([
+            ...list,
+            ...(current && current.toLowerCase().includes(state.search.toLowerCase()) ? [current] : []),
+          ]),
+        ].slice(0, 50)
+      },
+      searchBranches,
+      openAll: input.onViewAll,
     },
     bar: {
       visible,
       branch,
     },
-    branches: (search: string, signal?: AbortSignal) =>
-      serverSDK.api.vcs.branch
-        .list({ location: { directory: projectRoot() }, search, limit: 50 }, { signal })
-        .then((response) => response.data),
   }
 }
 

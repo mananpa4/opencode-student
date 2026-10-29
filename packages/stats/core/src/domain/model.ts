@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, max, or } from "drizzle-orm"
+import { and, asc, eq, inArray, max, or } from "drizzle-orm"
 import { Effect, Layer } from "effect"
 import * as Context from "effect/Context"
 import { DatabaseError, DrizzleClient } from "../database"
@@ -10,7 +10,6 @@ import {
   DATA_SITE_TIERS,
   inserted,
   omitUniqueUsers,
-  periodKeyFor,
   rankBy,
   statPeriodKey,
   statRowScope,
@@ -45,7 +44,7 @@ export type ModelStatMetric = {
 export declare namespace ModelStatRepo {
   export interface Service {
     readonly listDaily: () => Effect.Effect<ModelStatMetric[], DatabaseError>
-    readonly lastSyncedAt: (since: Date) => Effect.Effect<Date | null, DatabaseError>
+    readonly lastSyncedAt: () => Effect.Effect<Date | null, DatabaseError>
     readonly upsert: (rows: ModelStatRow[]) => Effect.Effect<void, DatabaseError>
     readonly deleteRetiredDimensions: (
       rows: ModelStatRow[],
@@ -117,13 +116,9 @@ export class ModelStatRepo extends Context.Service<ModelStatRepo, ModelStatRepo.
         })
       })
 
-      const lastSyncedAt = Effect.fn("ModelStatRepo.lastSyncedAt")(function* (since: Date) {
+      const lastSyncedAt = Effect.fn("ModelStatRepo.lastSyncedAt")(function* () {
         const result = yield* Effect.tryPromise({
-          try: () =>
-            db
-              .select({ value: max(modelStat.updated_at) })
-              .from(modelStat)
-              .where(and(eq(modelStat.grain, "day"), gte(modelStat.period_key, periodKeyFor("day", since)))),
+          try: () => db.select({ value: max(modelStat.updated_at) }).from(modelStat),
           catch: (cause) => DatabaseError.make({ cause }),
         })
         return result[0]?.value ?? null

@@ -1,11 +1,11 @@
-const normalizeModelSearch = (value: string) =>
+export const normalizeModelSearch = (value: string) =>
   value
     .toLowerCase()
     .replace(/[^\p{Letter}\p{Number}]+/gu, " ")
     .trim()
     .replace(/\s+/g, " ")
 
-const compactModelSearch = (value: string) => normalizeModelSearch(value).replaceAll(" ", "")
+export const compactModelSearch = (value: string) => normalizeModelSearch(value).replaceAll(" ", "")
 
 export const matchesModelSearch = (query: string, values: string[]) => {
   const search = normalizeModelSearch(query)

@@ -26,14 +26,13 @@
  */
 
 import { Schema } from "effect"
-import { decodeJson } from "../../utils/json.js"
 import { Allow } from "./partial-json-options.js"
 export * from "./partial-json-options.js"
 
 export class PartialJSON extends Error {}
 export class MalformedJSON extends Error {}
 
-const decodeJsonString = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.String))
+const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))
 
 /** Parse complete or incomplete JSON, restricted by the supplied partial-value flags. */
 export function parseJSON(jsonString: string, allowPartial = Allow.ALL): unknown {
@@ -176,16 +175,16 @@ const _parseJSON = (jsonString: string, allow: number) => {
     }
     if (jsonString.charAt(index) === '"') {
       try {
-        return decodeJsonString(jsonString.substring(start, ++index - Number(escape)))
+        return decodeJson(jsonString.substring(start, ++index - Number(escape))) as string
       } catch (error) {
         throwMalformedError(String(error))
       }
     }
     if (Allow.STR & allow) {
       try {
-        return decodeJsonString(`${jsonString.substring(start, index - Number(escape))}"`)
+        return decodeJson(`${jsonString.substring(start, index - Number(escape))}"`) as string
       } catch {
-        return decodeJsonString(`${jsonString.substring(start, jsonString.lastIndexOf("\\"))}"`)
+        return decodeJson(`${jsonString.substring(start, jsonString.lastIndexOf("\\"))}"`) as string
       }
     }
     return markPartialJSON("Unterminated string literal")

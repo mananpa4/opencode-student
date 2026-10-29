@@ -164,13 +164,11 @@ const scan = Effect.fn("ConfigPluginSource.scan")(function* (
       const entrypoints: Host.Entrypoints = directory
         ? yield* Effect.sync(() => Host.resolve({ directory: operation.target }))
         : { server: pathToFileURL(operation.target).href }
-      // A directory without a server part still lists for its GUI part. A TUI-only directory stays the TUI's own.
-      const entrypoint = entrypoints.server ?? entrypoints.gui
-      if (!entrypoint) return []
+      if (!entrypoints.server) return []
       if (directory) {
         const root = yield* fs.resolve(operation.target)
-        const resolved = yield* fs.resolve(fileURLToPath(entrypoint))
-        if (!FSUtil.contains(root, resolved)) return []
+        const server = yield* fs.resolve(fileURLToPath(entrypoints.server))
+        if (!FSUtil.contains(root, server)) return []
       }
       const times = yield* Effect.forEach(
         [

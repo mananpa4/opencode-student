@@ -7,7 +7,7 @@
 export * as WriteTool from "./write.js"
 
 import type { Context } from "@opencode/plugin/effect/plugin"
-import { ToolFailure } from "@opencode/ai/effect"
+import { ToolFailure } from "@opencode/ai"
 import { Effect, Schema } from "effect"
 import { Bom } from "@opencode/util/bom"
 import { Environment } from "../../environment/index.js"

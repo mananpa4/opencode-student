@@ -1,6 +1,6 @@
-const MAX_TITLEBAR_HISTORY = 100
+export const MAX_TITLEBAR_HISTORY = 100
 
-type TitlebarAction = "back" | "forward" | undefined
+export type TitlebarAction = "back" | "forward" | undefined
 
 export type HistoryLocation = { url: string; state?: unknown }
 
@@ -43,14 +43,14 @@ function isSettingsPath(url: string) {
   return url.split(/[?#]/, 1)[0] === "/settings"
 }
 
-function pushPath(state: TitlebarHistory, path: HistoryLocation, max = MAX_TITLEBAR_HISTORY): TitlebarHistory {
+export function pushPath(state: TitlebarHistory, path: HistoryLocation, max = MAX_TITLEBAR_HISTORY): TitlebarHistory {
   const stack = state.stack.slice(0, state.index + 1).concat(path)
   const next = trimHistory(stack, stack.length - 1, max)
 
   return { ...state, ...next, action: undefined }
 }
 
-function trimHistory(stack: HistoryLocation[], index: number, max = MAX_TITLEBAR_HISTORY) {
+export function trimHistory(stack: HistoryLocation[], index: number, max = MAX_TITLEBAR_HISTORY) {
   if (stack.length <= max) return { stack, index }
   const cut = stack.length - max
 

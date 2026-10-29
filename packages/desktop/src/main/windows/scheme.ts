@@ -5,6 +5,9 @@ export const rendererProtocol = "oc"
 
 export const rendererHost = "renderer"
 
+/** Files of installed GUI extensions: `oc://extensions/<id>/<path>`. */
+export const extensionHost = "extensions"
+
 export function loadWindow(win: BrowserWindow, html: string) {
   const devUrl = process.env.ELECTRON_RENDERER_URL
 
@@ -41,7 +44,7 @@ export function registerRendererScheme() {
         secure: true,
         standard: true,
         supportFetchAPI: true,
-        // Plugin fonts and fetched assets are cross-origin to the renderer.
+        // Extension fonts and fetched assets are cross-origin to the renderer.
         corsEnabled: true,
         stream: true,
         // Let Chromium keep V8 bytecode for the renderer bundle between launches.

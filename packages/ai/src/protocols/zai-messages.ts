@@ -3,15 +3,17 @@ import { Protocol } from "../route/protocol.js"
 import { LLMRequest } from "../schema/index.js"
 import { AnthropicMessages } from "./anthropic-messages.js"
 import { ProviderShared } from "./shared.js"
-import { OpenResponsesOptions } from "./utils/open-responses-options.js"
+import type { ZAIChat } from "./zai-chat.js"
+
+export type OptionsInput = {
+  readonly effort?: ZAIChat.ReasoningEffort
+  readonly thinking?: { readonly type: "enabled" | "adaptive" | "disabled" | (string & {}) }
+}
 
 const Options = Schema.Struct({
-  effort: Schema.optional(OpenResponsesOptions.ReasoningEffort),
-  thinking: Schema.optional(
-    Schema.Struct({ type: ProviderShared.knownString<"enabled" | "adaptive" | "disabled">() }),
-  ),
+  effort: Schema.optional(Schema.String),
+  thinking: Schema.optional(Schema.Struct({ type: Schema.String })),
 })
-export type OptionsInput = typeof Options.Type
 const Body = Schema.Struct({
   ...AnthropicMessages.AnthropicMessagesBody.fields,
   thinking: Options.fields.thinking,

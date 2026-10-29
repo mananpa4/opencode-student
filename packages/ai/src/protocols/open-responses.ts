@@ -60,7 +60,7 @@ const OpenResponsesInputVideo = Schema.Struct({
   type: Schema.tag("input_video"),
   video_url: Schema.String,
 })
-const MediaInput = Schema.Union([OpenResponsesInputImage, OpenResponsesInputFile, OpenResponsesInputVideo])
+const MediaInput = Schema.Union([OpenResponsesInputImage, OpenResponsesInputFile])
 export type MediaInput = Schema.Schema.Type<typeof MediaInput>
 const OpenResponsesInputContent = Schema.Union([OpenResponsesInputText, MediaInput])
 
@@ -476,7 +476,7 @@ export const lowerToolChoice = (protocolName: string, toolChoice: NonNullable<LL
 // provider-defined and does not necessarily identify the item's semantic type.
 const itemID = (providerMetadata: ProviderMetadata | undefined, providerMetadataKey: string) => {
   const metadata = providerMetadata?.[providerMetadataKey]
-  if (!metadata || typeof metadata.itemId !== "string") return undefined
+  if (!ProviderShared.isRecord(metadata) || typeof metadata.itemId !== "string") return undefined
   const separator = metadata.itemId.indexOf("_")
   return separator > 0 && separator < metadata.itemId.length - 1 ? metadata.itemId : undefined
 }
@@ -495,7 +495,7 @@ const lowerToolCall = (part: ToolCallPart, providerMetadataKey: string): OpenRes
 
 const lowerReasoning = (part: ReasoningPart, providerMetadataKey: string): OpenResponsesReasoningInput | undefined => {
   const metadata = part.providerMetadata?.[providerMetadataKey]
-  if (!metadata) return undefined
+  if (!ProviderShared.isRecord(metadata)) return undefined
   const id = itemID(part.providerMetadata, providerMetadataKey)
   const encryptedContent =
     typeof metadata.reasoningEncryptedContent === "string" || metadata.reasoningEncryptedContent === null
@@ -513,7 +513,12 @@ const lowerReasoning = (part: ReasoningPart, providerMetadataKey: string): OpenR
 const decodeImageDetail = ProviderShared.validateWith(Schema.decodeUnknownEffect(OpenResponsesInputImage.fields.detail))
 const decodeMessageMetadata = ProviderShared.validateWith(Schema.decodeUnknownEffect(MessageMetadata))
 
-const lowerMedia = Effect.fnUntraced(function* (part: MediaPart, request: LLMRequest, adapter: ProviderAdapter) {
+const lowerMedia = Effect.fnUntraced(function* (
+  part: MediaPart,
+  request: LLMRequest,
+  adapter: ProviderAdapter,
+  target: "message" | "tool-result",
+) {
   const media = part.media.inline()
   const providerMedia = adapter.lowerMedia?.({ part, media, request })
   if (providerMedia) return providerMedia
@@ -523,7 +528,8 @@ const lowerMedia = Effect.fnUntraced(function* (part: MediaPart, request: LLMReq
   const url = ProviderShared.mediaUrl(part.media)
   const location = url ?? (yield* ProviderShared.requireInlineMedia(adapter.name, part.media)).dataUrl
   if (part.media.kind !== "image") {
-    if (part.media.kind === "video") return { type: "input_video" as const, video_url: location }
+    if (target === "tool-result" && part.media.kind === "video")
+      return { type: "input_video" as const, video_url: location }
     return {
       type: "input_file" as const,
       filename: part.filename ?? (mime === "application/pdf" ? "document.pdf" : "file"),
@@ -544,8 +550,15 @@ const lowerUserContent = Effect.fnUntraced(function* (
   adapter: ProviderAdapter,
 ) {
   if (part.type === "text") return { type: "input_text" as const, text: part.text }
-  if (part.type === "media") return yield* lowerMedia(part, request, adapter)
+  if (part.type === "media") return yield* lowerMessageMedia(part, request, adapter)
   return yield* ProviderShared.unsupportedContent(adapter.name, "user", ["text", "media"])
+})
+
+const lowerMessageMedia = Effect.fnUntraced(function* (part: MediaPart, request: LLMRequest, adapter: ProviderAdapter) {
+  const lowered = yield* lowerMedia(part, request, adapter, "message")
+  if (lowered.type === "input_video")
+    return yield* ProviderShared.invalidRequest(`${adapter.name} user messages do not support input_video`)
+  return lowered
 })
 
 // Tool results may carry structured text, images, and files. Keep media as provider-native
@@ -556,7 +569,16 @@ const lowerToolResultContentItem = Effect.fnUntraced(function* (
   adapter: ProviderAdapter,
 ) {
   if (item.type === "text") return { type: "input_text" as const, text: item.text }
-  return yield* lowerMedia(ProviderShared.toolFileMedia(item), request, adapter)
+  return yield* lowerMedia(ProviderShared.toolFileMedia(item), request, adapter, "tool-result")
+})
+
+const lowerHostedToolResultContentItem = Effect.fnUntraced(function* (
+  item: Content,
+  request: LLMRequest,
+  adapter: ProviderAdapter,
+) {
+  if (item.type === "text") return { type: "input_text" as const, text: item.text }
+  return yield* lowerMessageMedia(ProviderShared.toolFileMedia(item), request, adapter)
 })
 
 const lowerToolResultOutput = Effect.fnUntraced(function* (
@@ -697,7 +719,7 @@ const lowerMessages = Effect.fnUntraced(function* (
           input.push({
             type: "message",
             role: "user",
-            content: yield* Effect.forEach(content, (item) => lowerToolResultContentItem(item, request, adapter)),
+            content: yield* Effect.forEach(content, (item) => lowerHostedToolResultContentItem(item, request, adapter)),
           })
           continue
         }
@@ -707,7 +729,7 @@ const lowerMessages = Effect.fnUntraced(function* (
           input.push({
             type: "message",
             role: "user",
-            content: [yield* lowerMedia(part, request, adapter)],
+            content: [yield* lowerMessageMedia(part, request, adapter)],
           })
           continue
         }
@@ -752,7 +774,7 @@ export const lowerConversation = Effect.fnUntraced(function* (
 export const lowerGeneration = (request: LLMRequest, options = OpenResponsesOptions.resolve(request)) => {
   const generation = request.generation
   const cacheKey = ProviderShared.promptCacheKey(request)
-  const parallelToolCalls = resolveParallelToolCalls(request, options)
+  const parallelToolCalls = resolveParallelToolCalls(request)
   return {
     stream: true as const,
     max_output_tokens: generation?.maxTokens,
@@ -780,15 +802,15 @@ export const lowerGeneration = (request: LLMRequest, options = OpenResponsesOpti
   }
 }
 
-export const resolveParallelToolCalls = (request: LLMRequest, options = OpenResponsesOptions.resolve(request)) => {
-  const configured = options.parallelToolCalls
+export const resolveParallelToolCalls = (request: LLMRequest) => {
+  const configured = OpenResponsesOptions.resolve(request).parallelToolCalls
   if (configured !== undefined) return configured
   const disabled = request.toolChoice?.disableParallelToolUse
   return disabled === undefined ? undefined : !disabled
 }
 
-export const allowedToolChoice = (request: LLMRequest, options = OpenResponsesOptions.resolve(request)) => {
-  const allowed = options.allowedTools
+export const allowedToolChoice = (request: LLMRequest) => {
+  const allowed = OpenResponsesOptions.resolve(request).allowedTools
   if (!allowed) return undefined
   return {
     type: "allowed_tools" as const,
@@ -802,13 +824,12 @@ export const fromRequestWithAdapter = Effect.fn("OpenResponses.fromRequestWithAd
   adapter: ProviderAdapter,
 ) {
   const projected = ProviderShared.flattenToolRequest(request)
-  const options = OpenResponsesOptions.resolve(request)
   return {
     ...(yield* lowerConversation(projected.request, adapter)),
-    ...lowerGeneration(request, options),
+    ...lowerGeneration(request),
     tools: projected.tools.length === 0 ? undefined : yield* lowerTools(projected.tools, adapter),
     tool_choice:
-      allowedToolChoice(request, options) ??
+      allowedToolChoice(request) ??
       (request.toolChoice ? yield* lowerToolChoice(adapter.name, request.toolChoice) : undefined),
   }
 })
@@ -836,7 +857,6 @@ export const mapUsage = (usage: OpenResponsesUsage | null | undefined, providerM
     cacheWriteInputTokens: cacheWrite,
     reasoningTokens: reasoning,
     totalTokens: ProviderShared.totalTokens(usage.input_tokens, usage.output_tokens, usage.total_tokens),
-    ...ProviderShared.reportedBilling(usage),
     providerMetadata: { [providerMetadataKey]: usage },
   })
 }
@@ -1001,7 +1021,7 @@ export const onReasoningDelta = (state: ParserState, event: Event, itemID: strin
 // as a single delta unless that summary index already streamed one.
 export const onReasoningDone = (state: ParserState, event: Event, itemID: string): StepResult => {
   const item = state.reasoningItems[itemID]
-  if (!item || event.text === undefined) return [state, NO_EVENTS]
+  if (!item || typeof event.text !== "string") return [state, NO_EVENTS]
   const index = event.summary_index ?? 0
   if (item.deltaIndexes.has(index)) return [state, NO_EVENTS]
   return onReasoningDelta(state, { ...event, delta: event.text }, itemID)

@@ -14,7 +14,9 @@ beforeEach(() => {
   document.head.innerHTML = ""
   document.documentElement.removeAttribute("data-theme")
   document.documentElement.removeAttribute("data-color-scheme")
+  document.documentElement.removeAttribute("data-window-transparency")
   document.documentElement.style.removeProperty("background-color")
+  Object.assign(window, { electron: undefined })
   localStorage.clear()
   setSystemDark(false)
 })
@@ -53,4 +55,21 @@ describe("theme preload", () => {
     expect(document.documentElement.dataset.colorScheme).toBe(expected)
     expect(document.getElementById("oc-theme-preload")?.textContent).toContain(css)
   })
+
+  test.each([
+    { transparency: "alpha" as const, attribute: "alpha" },
+    { transparency: "system-backdrop" as const, attribute: "system-backdrop" },
+    { transparency: "off" as const, attribute: undefined },
+  ])(
+    "marks the floor transparent for a $transparency window",
+    ({ transparency, attribute }) => {
+      Object.assign(window, { electron: { bootstrap: { transparency } } })
+      run()
+
+      expect(document.documentElement.dataset.windowTransparency).toBe(attribute)
+      expect(document.documentElement.style.backgroundColor).toBe(
+        transparency === "off" ? "#fafafa" : "transparent",
+      )
+    },
+  )
 })

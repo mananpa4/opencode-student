@@ -24,10 +24,8 @@ import {
 } from "../schema/index.js"
 import { classifyProviderFailure } from "../provider-error.js"
 import { isRecord, JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared.js"
-import { placesMarkers, requestTTL } from "../cache-policy.js"
-import * as Cache from "./utils/cache.js"
-import { resolveParallelToolCalls } from "./open-responses.js"
-import { OpenResponsesOptions } from "./utils/open-responses-options.js"
+import { cacheControl } from "./utils/cache.js"
+import { OpenAIOptions } from "./utils/openai-options.js"
 import { Lifecycle } from "./utils/lifecycle.js"
 import { ToolStream } from "./utils/tool-stream.js"
 
@@ -131,10 +129,6 @@ const OpenAIChatUserContent = Schema.Union([
     image_url: Schema.Struct({ url: Schema.String }),
   }),
   Schema.Struct({
-    type: Schema.Literal("video_url"),
-    video_url: Schema.Struct({ url: Schema.String }),
-  }),
-  Schema.Struct({
     type: Schema.Literal("file"),
     file: Schema.Struct({ filename: Schema.String, file_data: Schema.String }),
   }),
@@ -187,14 +181,7 @@ export const bodyFields = {
   stream_options: Schema.optional(Schema.Struct({ include_usage: Schema.Boolean })),
   store: Schema.optional(Schema.Boolean),
   prompt_cache_key: Schema.optional(Schema.String),
-  prompt_cache_retention: Schema.optional(Schema.String),
-  prompt_cache_options: Schema.optional(Schema.Struct({ ttl: Schema.optional(Schema.String) })),
-  reasoning_effort: Schema.optional(OpenResponsesOptions.ReasoningEffort),
-  verbosity: Schema.optional(OpenResponsesOptions.TextVerbositySchema),
-  service_tier: Schema.optional(OpenResponsesOptions.ServiceTierSchema),
-  parallel_tool_calls: Schema.optional(Schema.Boolean),
-  metadata: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  safety_identifier: Schema.optional(Schema.String),
+  reasoning_effort: Schema.optional(OpenAIOptions.OpenAIReasoningEffort),
   tool_stream: Schema.optional(Schema.Boolean),
   max_completion_tokens: Schema.optional(Schema.Number),
   max_tokens: Schema.optional(Schema.Number),
@@ -386,11 +373,10 @@ const lowerMedia = Effect.fnUntraced(function* (part: MediaPart) {
         file_data: (yield* ProviderShared.requireInlineMedia("OpenAI Chat", part.media)).dataUrl,
       },
     }
-  if (part.media.kind !== "image" && part.media.kind !== "video")
+  if (part.media.kind !== "image")
     return yield* ProviderShared.invalidRequest(`OpenAI Chat does not support media type ${part.media.mediaType}`)
   const url =
     ProviderShared.mediaUrl(part.media) ?? (yield* ProviderShared.requireInlineMedia("OpenAI Chat", part.media)).dataUrl
-  if (part.media.kind === "video") return { type: "video_url" as const, video_url: { url } }
   return { type: "image_url" as const, image_url: { url } }
 })
 
@@ -591,7 +577,7 @@ const lowerMessages = Effect.fnUntraced(function* (request: LLMRequest, options:
   const mistral = ["mistral", "devstral", "codestral", "pixtral", "mixtral"].some((family) => modelID.includes(family))
   const lowering = {
     ...options,
-    providerMetadataKey: request.model.route.providerMetadataKey ?? request.model.provider,
+    providerMetadataKey: request.model.route.providerMetadataKey ?? String(request.model.provider),
     toolCallID: (id: string) => {
       if (mistral)
         return id
@@ -770,10 +756,8 @@ const detectZaiToolStream = (provider: string, baseURL: string | undefined, mode
   return true
 }
 
-const lowerOptions = (request: LLMRequest, supportsStore: boolean, hasActiveTools: boolean) => {
-  const options = OpenResponsesOptions.resolve(request)
-  // OpenAI rejects `parallel_tool_calls` unless tools are present.
-  const parallelToolCalls = hasActiveTools ? resolveParallelToolCalls(request, options) : undefined
+const lowerOptions = (request: LLMRequest, supportsStore: boolean) => {
+  const options = OpenAIOptions.resolve(request)
   // Default off: strict providers 400 on unknown body fields, so only send
   // the key where compatibility explicitly allows it. Header-based affinity
   // (x-session-affinity, x-grok-conv-id, ...) is unaffected.
@@ -782,14 +766,7 @@ const lowerOptions = (request: LLMRequest, supportsStore: boolean, hasActiveTool
   return {
     ...(supportsStore ? { store: options.store ?? false } : {}),
     ...(cacheKey ? { prompt_cache_key: cacheKey } : {}),
-    // Inline markers carry the lifetime when the policy places them.
-    ...(placesMarkers(request) ? {} : Cache.openAIRequestTTL(requestTTL(request))),
     ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}),
-    ...(options.textVerbosity ? { verbosity: options.textVerbosity } : {}),
-    ...(options.serviceTier ? { service_tier: options.serviceTier } : {}),
-    ...(parallelToolCalls !== undefined ? { parallel_tool_calls: parallelToolCalls } : {}),
-    ...(options.metadata ? { metadata: options.metadata } : {}),
-    ...(options.safetyIdentifier ? { safety_identifier: options.safetyIdentifier } : {}),
   }
 }
 
@@ -806,7 +783,7 @@ export const fromRequest = Effect.fn("OpenAIChat.fromRequest")(function* (
     )
   const generation = request.generation
   const flattened = ProviderShared.flattenToolRequest(request)
-  const provider = request.model.provider
+  const provider = String(request.model.provider)
   const baseURL = request.model.route.endpoint.baseURL
   const detectedMaxTokensField = detectMaxTokensField(provider, baseURL)
   const maxTokensField = request.model.compatibility?.maxTokensField ?? detectedMaxTokensField
@@ -840,13 +817,13 @@ export const fromRequest = Effect.fn("OpenAIChat.fromRequest")(function* (
     presence_penalty: generation?.presencePenalty,
     seed: generation?.seed,
     stop: generation?.stop,
-    ...lowerOptions(request, supportsStore, hasActiveTools),
+    ...lowerOptions(request, supportsStore),
   }
 })
 
 // Provider wrappers that pass their own marker writer keep it; otherwise a declared cache format adds one.
 const declaredCacheControl = (request: LLMRequest) =>
-  request.model.compatibility?.cacheFormat === undefined ? undefined : Cache.cacheControl()
+  request.model.compatibility?.cacheFormat === undefined ? undefined : cacheControl()
 
 // =============================================================================
 // Stream Parsing
@@ -881,7 +858,12 @@ const mapFinishReason = Effect.fnUntraced(function* (event: OpenAIChatEvent, rea
     case "tool_calls":
       return "tool-calls" as const
     default:
-      return "unknown" as const
+      return yield* new AIError({
+        reason: new UnknownProviderError({
+          message: `Provider finish_reason: ${reason}`,
+          body: ProviderShared.encodeJson(event),
+        }),
+      })
   }
 })
 
@@ -915,7 +897,6 @@ const mapUsage = (usage: OpenAIChatEvent["usage"], providerMetadataKey: string):
     cacheWriteInputTokens: cacheWrite,
     reasoningTokens: reasoning,
     totalTokens: ProviderShared.totalTokens(input, output, usage.total_tokens ?? undefined),
-    ...ProviderShared.reportedBilling(usage),
     providerMetadata: { [providerMetadataKey]: usage },
   })
 }
@@ -1047,9 +1028,10 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
     const choice = event.choices?.[0]
     // Moonshot (and a few other OpenAI-compatible providers) attach usage to
     // `choice.usage` instead of the top-level `usage` field.
+    const choiceUsage = (choice as unknown as { usage?: OpenAIChatEvent["usage"] })?.usage
     const usage =
       mapUsage(event.usage, state.providerMetadataKey) ??
-      mapUsage(choice?.usage, state.providerMetadataKey) ??
+      (choiceUsage ? mapUsage(choiceUsage, state.providerMetadataKey) : undefined) ??
       state.usage
     const rawFinishReason = choice?.finish_reason
     const finishReason = rawFinishReason
@@ -1068,15 +1050,21 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
     let lifecycle = state.lifecycle
 
     const reasoning = reasoningDelta(delta, state.reasoningField)
-    if (
-      state.finishReason !== undefined &&
+    const hasLateContent =
+      Boolean(delta?.content) ||
+      Boolean(delta?.refusal) ||
+      reasoning !== undefined ||
+      (Array.isArray(delta?.reasoning_details) && delta.reasoning_details.length > 0) ||
       toolDeltas.some((tool) => Boolean(tool.id) || Boolean(tool.function?.name) || Boolean(tool.function?.arguments))
-    )
-      return yield* ProviderShared.eventError(
-        ADAPTER,
-        "OpenAI Chat received content after the finish reason",
-        ProviderShared.encodeJson(event),
-      )
+    if (state.finishReason !== undefined) {
+      if (hasLateContent)
+        return yield* ProviderShared.eventError(
+          ADAPTER,
+          "OpenAI Chat received content after the finish reason",
+          ProviderShared.encodeJson(event),
+        )
+      return [{ ...state, usage }, events] as const
+    }
 
     const reasoningField = state.reasoningField ?? reasoning?.field
     const reasoningTextObserved = state.reasoningTextObserved || reasoning !== undefined
@@ -1187,7 +1175,7 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
         pendingTools,
         toolCallEvents: finished?.events ?? state.toolCallEvents,
         usage,
-        finishReason: state.finishReason ?? finishReason,
+        finishReason,
         lifecycle,
         reasoningField,
         reasoningTextObserved,
@@ -1265,7 +1253,7 @@ export const protocol = Protocol.make({
   stream: {
     event: OpenAIChatStreamEvent,
     initial: (request) => ({
-      providerMetadataKey: request.model.route.providerMetadataKey ?? request.model.provider,
+      providerMetadataKey: request.model.route.providerMetadataKey ?? String(request.model.provider),
       tools: ToolStream.empty<number>(),
       pendingTools: {},
       toolCallEvents: [],

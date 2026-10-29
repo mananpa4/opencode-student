@@ -1,36 +1,36 @@
-import { Spinner } from "./spinner"
+// @ts-nocheck
+import * as mod from "./spinner"
+import { create } from "../storybook/scaffold"
 
 const docs = `### Overview
-Dot-matrix indicator for AI activity: a running session, turn, subagent or tool. Busy session tabs, \`ActivityRing\`
-and the session progress indicator render it. Other loading states use \`Loader\`.
+Animated loading indicator for inline or page-level loading states.
+
+Use with \`Button\` or in empty states.
+
+### API
+- Accepts standard SVG props (class, style).
 
 ### Variants and states
-- Soft Radar: a lit head sweeps each ring of a 5×5 grid, leaving a fading trail, around a steady centre.
+- Single default animation style.
 
 ### Behavior
-- CSS animation only. Every dot shares one loop, and \`syncSpinPhase\` pins every instance to the same start, so
-  spinners on screen stay in phase.
-- Reduced motion freezes it on a still pose.
+- Animation is CSS-driven via data attributes.
 
 ### Accessibility
 - Use alongside text or aria-live regions to convey loading state.
+
+### Theming/tokens
+- Uses \`data-component="spinner"\` for styling hooks.
+
 `
 
-type Args = { speed: number; size: number }
+const story = create({ title: "UI/Spinner", mod })
 
 export default {
   title: "UI/Spinner",
   id: "components-spinner",
-  component: Spinner,
+  component: story.meta.component,
   tags: ["autodocs"],
-  args: { speed: 1, size: 16 },
-  argTypes: {
-    speed: { control: { type: "range", min: 0.25, max: 2, step: 0.05 } },
-    size: { control: { type: "range", min: 12, max: 48, step: 1 } },
-  },
-  render: (args: Args) => (
-    <Spinner style={{ width: `${args.size}px`, height: `${args.size}px`, "--spinner-time": String(1 / args.speed) }} />
-  ),
   parameters: {
     docs: {
       description: {
@@ -40,4 +40,14 @@ export default {
   },
 }
 
-export const SoftRadar = {}
+export const Basic = story.Basic
+
+export const Sizes = {
+  render: () => (
+    <div style={{ display: "flex", gap: "16px", "align-items": "center" }}>
+      <mod.Spinner style={{ width: "12px", height: "12px" }} />
+      <mod.Spinner style={{ width: "20px", height: "20px" }} />
+      <mod.Spinner style={{ width: "28px", height: "28px" }} />
+    </div>
+  ),
+}

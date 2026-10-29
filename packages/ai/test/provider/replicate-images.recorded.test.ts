@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
-import { Image } from "../../src/effect.js"
+import { Image } from "../../src/index.js"
 import { Replicate } from "../../src/providers.js"
 import { recordedTests } from "../recorded-test.js"
 import { queuedPoll } from "./queued-recording.js"

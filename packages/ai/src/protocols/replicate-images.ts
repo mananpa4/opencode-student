@@ -156,7 +156,7 @@ const decodeResult = Effect.fn("ReplicateImages.decodeResult")(function* (
 
 export const protocol = MediaProtocol.queued<Request, ImageResponse, Token>(route, {
   token: Token,
-  unsupported: ["images", "n", "aspect", "resolution"],
+  unsupported: ["images", "mask", "n", "size", "aspectRatio", "seed", "format"],
   start: { body: { from: fromRequest }, decode: decodeStart },
   status: { path: (token) => token.getURL, decode: decodeStatus },
   result: { path: (token) => token.getURL, decode: decodeResult },

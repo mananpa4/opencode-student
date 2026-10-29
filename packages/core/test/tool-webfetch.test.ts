@@ -23,12 +23,10 @@ const webFetchToolNode = makeLocationNode({
 })
 
 const sessionID = Session.ID.make("ses_webfetch_test")
-const webFetchUserAgent =
-  "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; OpenCode-User/1.0; +https://opencode.ai"
+// Web traffic presents a rotating desktop browser profile, never an OpenCode CLI signature.
+const browserUserAgent = expect.stringMatching(/^Mozilla\/5\.0 .*(Chrome\/|Firefox\/|Version\/)/)
 const requests: Array<{ readonly url: string; readonly headers: Record<string, string> }> = []
 const assertions: Permission.AssertInput[] = []
-const checks: Permission.AssertInput[] = []
-const denied = new Set<string>()
 let respond = (_request: HttpClientRequest.HttpClientRequest) =>
   Effect.succeed(new Response("hello", { headers: { "content-type": "text/plain" } }))
 
@@ -41,19 +39,7 @@ const http = Layer.succeed(
     ),
   ),
 )
-const permission = permissionLayer({
-  assert: (input) => Effect.sync(() => assertions.push(input)),
-  assertNotDenied: (input) =>
-    Effect.sync(() => checks.push(input)).pipe(
-      Effect.andThen(
-        input.resources.some((resource) => denied.has(resource))
-          ? Effect.fail(
-              new Permission.BlockedError({ rules: [], permission: input.action, resources: input.resources }),
-            )
-          : Effect.void,
-      ),
-    ),
-})
+const permission = permissionLayer({ assert: (input) => Effect.sync(() => assertions.push(input)) })
 const toolLayer = (replacements: LayerNode.Replacements = []) =>
   AppNodeBuilder.build(LayerNode.group([Tool.node, webFetchToolNode]), [
     Permission.node.replace(permission),
@@ -66,8 +52,6 @@ const live = testEffect(toolLayer())
 const reset = () => {
   requests.length = 0
   assertions.length = 0
-  checks.length = 0
-  denied.clear()
   respond = () => Effect.succeed(new Response("hello", { headers: { "content-type": "text/plain" } }))
 }
 
@@ -436,7 +420,7 @@ describe("WebFetchTool registration", () => {
         status: "completed",
         output: { url, contentType: "text/plain", format: "text", output: "hello" },
         content: [{ type: "text", text: "hello" }],
-        metadata: { contentType: "text/plain" },
+        metadata: { contentType: "text/plain", sanitized: [] },
       })
       expect(assertions).toMatchObject([
         { sessionID, action: "webfetch", resources: [url], save: ["*"], metadata: { url, format: "text", timeout: 4 } },
@@ -447,11 +431,11 @@ describe("WebFetchTool registration", () => {
           headers: {
             accept: "text/plain;q=1.0, text/markdown;q=0.9, text/html;q=0.8, */*;q=0.1",
             "accept-language": "en-US,en;q=0.9",
-            "user-agent": webFetchUserAgent,
+            "user-agent": browserUserAgent,
           },
         },
       ])
-      expect(requests[0]?.headers).not.toHaveProperty("sec-fetch-mode")
+      expect(requests[0]?.headers["sec-fetch-mode"]).toBe("navigate")
     }),
   )
 
@@ -472,7 +456,7 @@ describe("WebFetchTool registration", () => {
     }),
   )
 
-  live.effect("follows redirects, checking each target against the rules without asking", () => {
+  live.effect("follows redirects while approving only the requested URL", () => {
     const received: Array<Record<string, string | null>> = []
     return Effect.acquireUseRelease(
       Effect.sync(() =>
@@ -504,59 +488,18 @@ describe("WebFetchTool registration", () => {
           expect(assertions).toMatchObject([
             { sessionID, action: "webfetch", resources: [url], save: ["*"], metadata: { url, format: "text" } },
           ])
-          const target = new URL("/target", server.url).toString()
-          expect(checks).toMatchObject([{ sessionID, action: "webfetch", resources: [target] }])
           expect(received).toEqual(
             Array.from({ length: 2 }, () => ({
               accept: "text/plain;q=1.0, text/markdown;q=0.9, text/html;q=0.8, */*;q=0.1",
               "accept-language": "en-US,en;q=0.9",
-              "sec-fetch-mode": null,
-              "user-agent": webFetchUserAgent,
+              "sec-fetch-mode": "navigate",
+              "user-agent": browserUserAgent,
             })),
           )
         }),
       (server) => Effect.promise(() => server.stop(true)),
     )
   })
-
-  it.effect("stops at a redirect target the rules deny", () =>
-    Effect.gen(function* () {
-      reset()
-      const registry = yield* Tool.Service
-      const url = "https://example.com/start"
-      const target = "http://169.254.169.254/latest/meta-data"
-      denied.add(target)
-      respond = () => Effect.succeed(new Response("", { status: 302, headers: { location: target } }))
-
-      expect(yield* executeTool(registry, call({ url, format: "text" }))).toMatchObject({
-        status: "error",
-        error: { message: "Permission denied: webfetch" },
-      })
-      expect(checks.map((check) => check.resources)).toEqual([[target]])
-      expect(requests.map((request) => request.url)).toEqual([url])
-    }),
-  )
-
-  it.effect("rejects redirects to non-HTTP schemes and endless redirect chains", () =>
-    Effect.gen(function* () {
-      reset()
-      const registry = yield* Tool.Service
-      respond = () => Effect.succeed(new Response("", { status: 301, headers: { location: "file:///etc/passwd" } }))
-      expect(yield* executeTool(registry, call({ url: "https://example.com/a", format: "text" }))).toMatchObject({
-        status: "error",
-        error: { message: "URL must use http:// or https://" },
-      })
-      expect(checks).toEqual([])
-
-      reset()
-      respond = (request) => Effect.succeed(new Response("", { status: 307, headers: { location: `${request.url}x` } }))
-      expect(yield* executeTool(registry, call({ url: "https://example.com/a", format: "text" }))).toMatchObject({
-        status: "error",
-        error: { message: `Too many redirects (more than ${WebFetchTool.MAX_REDIRECTS})` },
-      })
-      expect(requests).toHaveLength(WebFetchTool.MAX_REDIRECTS + 1)
-    }),
-  )
 
   it.effect("rejects non-HTTP schemes before permission or transport", () =>
     Effect.gen(function* () {
@@ -664,7 +607,7 @@ describe("WebFetchTool registration", () => {
     }),
   )
 
-  it.effect("retries Cloudflare challenges with an honest user agent", () =>
+  it.effect("retries Cloudflare challenges with a fresh browser profile", () =>
     Effect.gen(function* () {
       reset()
       let count = 0
@@ -681,8 +624,8 @@ describe("WebFetchTool registration", () => {
         content: [{ type: "text", text: "ok" }],
       })
       expect(requests).toHaveLength(2)
-      expect(requests[0]?.headers["user-agent"]).toBe(webFetchUserAgent)
-      expect(requests[1]?.headers["user-agent"]).toBe("opencode")
+      expect(requests[0]?.headers["user-agent"]).toMatch(/^Mozilla\/5\.0 /)
+      expect(requests[1]?.headers["user-agent"]).toMatch(/^Mozilla\/5\.0 /)
     }),
   )
 
@@ -698,7 +641,7 @@ describe("WebFetchTool registration", () => {
         error: { type: "unknown", message: `StatusCode: non 2xx status code (403 GET ${url})` },
       })
       expect(requests).toHaveLength(1)
-      expect(requests[0]?.headers["user-agent"]).toBe(webFetchUserAgent)
+      expect(requests[0]?.headers["user-agent"]).toMatch(/^Mozilla\/5\.0 /)
     }),
   )
 

@@ -4,11 +4,8 @@ import { Cause, Context, Effect, Stream } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { SharedEvents } from "../shared-events.js"
 import { ClientError, OpenCode } from "./generated/index.js"
-import type { EventSubscribeInput } from "./api.js"
 import { RpcClientRuntime } from "./rpc.js"
 import type { RpcCallOptions } from "../promise/rpc.js"
-
-type EventType = NonNullable<EventSubscribeInput["types"]>[number]
 
 const CurrentHeaders = Context.Reference<RpcCallOptions["headers"]>("@opencode/client/effect/rpc/headers", {
   defaultValue: () => undefined,
@@ -41,8 +38,8 @@ export const make = Effect.fn("OpenCode.make")(function* (options?: { readonly b
       context,
     ),
   )
-  const subscribe = <Type extends EventType = EventType>(input?: { readonly types?: ReadonlyArray<Type> }) =>
-    Stream.fromAsyncIterable(shared.subscribe({ types: input?.types }), (error) => error).pipe(
+  const subscribe = () =>
+    Stream.fromAsyncIterable(shared.subscribe(), (error) => error).pipe(
       Stream.catch((error) =>
         Stream.failCause(error instanceof EventFailure ? error.cause : Cause.fail(new ClientError({ cause: error }))),
       ),

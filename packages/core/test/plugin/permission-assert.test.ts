@@ -26,7 +26,6 @@ const permission = Layer.succeed(
       if (input.action === "declined") return Effect.die(new Permission.DeclinedError())
       return Effect.void
     },
-    assertNotDenied: () => Effect.void,
     reply: () => Effect.void,
     get: () => Effect.succeed(undefined),
     forSession: () => Effect.succeed([]),

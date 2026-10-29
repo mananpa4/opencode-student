@@ -19,8 +19,6 @@ export interface Adapter {
 
 type DraftAssistant = WritableDraft<SessionMessage.Assistant>
 
-const decodeAssistantContent = Schema.decodeUnknownSync(Schema.Array(SessionMessage.AssistantContent))
-
 const projectTerminalSnapshot = (draft: DraftAssistant, event: SessionEvent.Step.Ended | SessionEvent.Step.Failed) => {
   if (event.data.snapshot || event.data.files)
     draft.snapshot = {
@@ -87,7 +85,9 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
       "session.unarchived": () => Effect.void,
       "session.message.content.updated": (event) =>
         updateOwnedAssistant(event.data.messageID, (draft) => {
-          draft.content = castDraft(decodeAssistantContent(event.data.content))
+          draft.content = castDraft(
+            Schema.decodeUnknownSync(Schema.Array(SessionMessage.AssistantContent))(event.data.content),
+          )
         }),
       "session.usage.recorded": () => Effect.void,
       "session.agent.selected": (event) =>

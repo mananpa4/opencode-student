@@ -7,7 +7,7 @@ const sampleInterval = 1000
 
 const samplePeriod = 15000
 
-export const unresponsiveSampler = Effect.gen(function* () {
+export const makeUnresponsiveSampler = Effect.gen(function* () {
   const runFork = Effect.runForkWith(yield* Effect.context())
 
   function createUnresponsiveSampler(win: BrowserWindow, name: string) {

@@ -1,4 +1,4 @@
-import type { DesktopMenuAction, DesktopZoomLevel } from "@opencode/app/desktop-menu"
+import type { DesktopMenuAction } from "@opencode/app/desktop-menu"
 import type { DesktopNativeBundle } from "@opencode/app/i18n/desktop-native"
 import type { WindowBootstrap } from "../shared/window-bootstrap"
 import type {
@@ -10,6 +10,7 @@ import type {
   SaveFilePickerOptions,
   ServerReadyData,
   TitlebarTheme,
+  TrayProject,
 } from "../shared/ipc-contract"
 
 export type ElectronAPI = {
@@ -50,8 +51,6 @@ export type ElectronAPI = {
   readClipboardImage(): Promise<ClipboardImage | null>
   writeClipboardText(text: string): Promise<void>
   getWindowFocused(): Promise<boolean>
-  requestMicrophone(): Promise<boolean>
-  setVoiceCallActive(active: boolean): Promise<void>
   getWindowFullscreen(): Promise<boolean>
   onWindowFullscreenChanged(cb: (fullscreen: boolean) => void): () => void
   setWindowFocus(): Promise<void>
@@ -62,15 +61,14 @@ export type ElectronAPI = {
   getPinchZoomEnabled(): Promise<boolean>
   setPinchZoomEnabled(enabled: boolean): Promise<void>
   onPinchZoomEnabledChanged(cb: (enabled: boolean) => void): () => void
-  getZoomLevel(): Promise<DesktopZoomLevel>
-  setZoomLevel(level: DesktopZoomLevel): Promise<void>
-  onZoomChanged(cb: (zoom: { factor: number; level: DesktopZoomLevel }) => void): () => void
+  onZoomFactorChanged(cb: (factor: number) => void): () => void
   setTitlebar(theme: TitlebarTheme): Promise<void>
-  setTrafficLightsPosition(position: { x: number; y: number }): Promise<void>
   runDesktopMenuAction(action: DesktopMenuAction): Promise<void>
   setBackgroundColor(color: string): Promise<void>
   exportDebugLogs(): Promise<string>
   setForceFocus(enabled: boolean): Promise<void>
   recordFatalRendererError(error: FatalRendererError): Promise<void>
   setNativeTranslations(bundle: DesktopNativeBundle): Promise<void>
+  setTrayProjects(projects: TrayProject[]): void
+  onTrayOpenProject(cb: (directory: string) => void): () => void
 }

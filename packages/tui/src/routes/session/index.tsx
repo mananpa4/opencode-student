@@ -70,9 +70,6 @@ import { statusLabel } from "../../component/dialog-workspace-file-changes"
 import { DialogMessage } from "./dialog-message"
 import { DialogFork } from "./dialog-fork"
 import { DialogTimeline } from "./dialog-timeline"
-import { DialogGoUpsell } from "../../component/dialog-go-upsell"
-import { UsageLimitNotice, useLimitNotice, useUsageAlerts } from "../../component/usage"
-import { useStorage } from "../../context/storage"
 import { Composer } from "./composer"
 import { filetype } from "../../util/filetype"
 import parsers from "../../parsers-config"
@@ -89,6 +86,7 @@ import { PermissionPrompt } from "./permission"
 import { FormPrompt } from "./form"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { DialogExportResult } from "../../ui/dialog-export-result"
+import { sessionEpilogue } from "../../util/presentation"
 import { useConfig, useNewDesigns } from "../../config"
 import { useClipboard } from "../../context/clipboard"
 import { nextThinkingMode, type ThinkingMode } from "../../context/thinking"
@@ -103,9 +101,12 @@ import {
   cacheReuseDrop,
   completeGroupBoundary,
   createSessionRows,
+  legacyTurns,
   messageBoundaryIDs,
   resolvePart,
   sessionRowID,
+  turnDuration,
+  turnTokensPerSecond,
   type CacheUsage,
   type PartRef,
   type SessionRow,
@@ -115,7 +116,6 @@ import { findMessageBoundary, messageNavigationSlack } from "./message-navigatio
 import { stringWidth } from "../../util/string-width"
 import { useArgs } from "../../context/args"
 import { withTimestampedFallback } from "@opencode/util/session-title-fallback"
-import { SessionTurn } from "@opencode/util/session-turn"
 import { useSessionTabs, type ScrollAnchor } from "../../context/session-tabs"
 import { createSingleFlight } from "../../util/single-flight"
 import { createDelayedPresence } from "../../util/delayed-presence"
@@ -155,7 +155,7 @@ export function Session(props: {
   onTerminalPicker?: (show: (() => void) | undefined) => void
   width?: number
 }) {
-  const epilogue = useEpilogue()
+  const setEpilogue = useEpilogue()
   const clipboard = useClipboard()
   const writeExport = async (file: string, content: string) => {
     await mkdir(path.dirname(file), { recursive: true })
@@ -174,7 +174,7 @@ export function Session(props: {
   const session = createMemo(() => data.session.get(route.sessionID))
   const messages = () => data.session.message.list(route.sessionID)
   const messageIndexes = createMemo(() => new Map(messages().map((message, index) => [message.id, index])))
-  const legacy = createMemo(() => SessionTurn.legacy(messages()))
+  const legacy = createMemo(() => legacyTurns(messages()))
   const messagesBeforeRevert = () => {
     const messageID = session()?.revert?.messageID
     if (!messageID) return messages()
@@ -194,9 +194,9 @@ export function Session(props: {
 
   createEffect(() => {
     const title = Locale.truncate(session()?.title ?? "", 50)
-    epilogue.session({ title, sessionID: session()?.id })
+    setEpilogue(sessionEpilogue({ title, sessionID: session()?.id }))
   })
-  onCleanup(() => epilogue.session())
+  onCleanup(() => setEpilogue())
   const descendantSessionIDs = createMemo(() => {
     if (session()?.parentID) return []
     return data.session.family(route.sessionID).filter((id) => id !== route.sessionID)
@@ -625,21 +625,8 @@ export function Session(props: {
     current.submit()
   })
   const dialog = useDialog()
-  const storage = useStorage()
-  const [goUpsell, updateGoUpsell] = storage.store<{ lastSeenAt?: number; dontShow?: boolean }>("go-upsell", {
-    initial: {},
-  })
-  const [goUpsellMemory, updateGoUpsellMemory] = storage.memory<{ lastSeenAt?: number; dontShow?: boolean }>(
-    "go-upsell",
-    { initial: {} },
-  )
   const handledFreeLimits = new Set<string>()
-  useUsageAlerts(() => route.sessionID)
-  let sessionDisposed = false
-  onCleanup(() => {
-    sessionDisposed = true
-  })
-  // Restore the prompt when the free allowance stops it, and offer OpenCode Go on the first hit in a day.
+  // Restore the prompt when the free allowance stops it.
   onCleanup(
     data.on("session.step.failed", (event) => {
       if (event.data.sessionID !== route.sessionID || event.data.error.type !== "provider.free-limit") return
@@ -665,82 +652,6 @@ export function Session(props: {
           break
         }
       }
-      if (dialog.stack.length > 0) return
-      if (goUpsell.dontShow || goUpsellMemory.dontShow) return
-      const now = Date.now()
-      const seen = Math.max(goUpsell.lastSeenAt ?? 0, goUpsellMemory.lastSeenAt ?? 0)
-      if (seen > 0 && now - seen < 86_400_000) return
-      const expectedText = current.current.text
-      const expectedFiles = current.current.files?.length ?? 0
-      const expectedAgents = current.current.agents?.length ?? 0
-      const expectedSkills = current.current.skills?.length ?? 0
-      const expectedPasted = current.current.pasted.length
-      const hasRecalledPrompt = () => {
-        const active = prompt()
-        return Boolean(
-          !sessionDisposed &&
-            route.sessionID === event.data.sessionID &&
-            active &&
-            active.current.text === expectedText &&
-            (active.current.files?.length ?? 0) === expectedFiles &&
-            (active.current.agents?.length ?? 0) === expectedAgents &&
-            (active.current.skills?.length ?? 0) === expectedSkills &&
-            active.current.pasted.length === expectedPasted,
-        )
-      }
-      const canOpen = () =>
-        Boolean(hasRecalledPrompt() && dialog.stack.length === 0 && !goUpsell.dontShow && !goUpsellMemory.dontShow)
-      const previousSeen = goUpsellMemory.lastSeenAt
-      updateGoUpsellMemory((draft) => {
-        draft.lastSeenAt = now
-      })
-      let claimed = false
-      void updateGoUpsell((draft) => {
-        if (draft.dontShow) {
-          updateGoUpsellMemory((mem) => {
-            mem.dontShow = true
-            mem.lastSeenAt = draft.lastSeenAt ?? previousSeen
-          })
-          return
-        }
-        if ((draft.lastSeenAt ?? 0) > 0 && now - (draft.lastSeenAt ?? 0) < 86_400_000) {
-          updateGoUpsellMemory((mem) => {
-            mem.lastSeenAt = draft.lastSeenAt
-          })
-          return
-        }
-        if (!canOpen()) {
-          updateGoUpsellMemory((mem) => {
-            mem.lastSeenAt = previousSeen
-          })
-          return
-        }
-        draft.lastSeenAt = now
-        claimed = true
-      })
-        .catch(() => {
-          claimed = true
-        })
-        .then(() => {
-          if (!claimed || !canOpen()) return
-          dialog.replace(() => (
-            <DialogGoUpsell
-              reset={freeLimitReset(event.data.error.retryAfterMs, event.created)}
-              canContinue={hasRecalledPrompt}
-              onDontShowAgain={() => {
-                updateGoUpsellMemory((draft) => {
-                  draft.dontShow = true
-                })
-                void updateGoUpsell((draft) => {
-                  draft.dontShow = true
-                }).catch(() => undefined)
-              }}
-              onSubscribe={() => {
-                prompt()?.submit()
-              }}
-            />
-          ))
-        })
     }),
   )
   const runPendingAction = createSingleFlight<string>()
@@ -2019,27 +1930,27 @@ function AssistantFooter(props: { message: SessionMessageAssistant }) {
         ?.name ?? `${props.message.model.providerID}/${props.message.model.id}`,
   )
   const messages = createMemo(() => data.session.message.list(ctx.sessionID))
-  const turn = () => ({ index: ctx.messageIndex(props.message.id), legacy: ctx.legacyTurns() })
-  const duration = createMemo(() => SessionTurn.duration(messages(), props.message, turn()))
-  const tokensPerSecond = createMemo(() => SessionTurn.tokensPerSecond(messages(), props.message, turn()))
+  const duration = createMemo(() =>
+    turnDuration(props.message, messages(), ctx.messageIndex(props.message.id), ctx.legacyTurns()),
+  )
+  const tokensPerSecond = createMemo(() =>
+    turnTokensPerSecond(props.message, messages(), ctx.messageIndex(props.message.id), ctx.legacyTurns()),
+  )
   const interrupted = createMemo(() => props.message.error?.message === "Step interrupted")
   const freeLimit = createMemo(() => props.message.error?.type === "provider.free-limit")
-  const limitNotice = useLimitNotice(() => props.message)
   return (
     <>
       <Show when={props.message.error && !interrupted() && !props.message.retry}>
-        <Switch
+        <Show
+          when={freeLimit()}
           fallback={
             <box paddingLeft={3}>
               <text fg={theme.text.feedback.error.base}>Error: {errorMessage(props.message.error)}</text>
             </box>
           }
         >
-          <Match when={freeLimit()}>
-            <FreeLimitNotice message={props.message} />
-          </Match>
-          <Match when={limitNotice()}>{(notice) => <UsageLimitNotice notice={notice()} />}</Match>
-        </Switch>
+          <FreeLimitNotice message={props.message} />
+        </Show>
       </Show>
       <AssistantRetry retry={props.message.retry} />
       <box paddingLeft={3} marginTop={props.message.retry || (props.message.error && !interrupted()) ? 1 : 0}>
@@ -2730,7 +2641,7 @@ type ToolProps = {
 }
 function GenericTool(props: ToolProps) {
   const theme = useTheme()
-  const output = createMemo(() => stripAnsi(props.output?.trim() ?? ""))
+  const output = createMemo(() => props.output?.trim() ?? "")
   const input = createMemo(() => Object.entries(props.input))
   const [expanded, setExpanded] = createSignal(false)
   const expandable = createMemo(() => input().length > 0 || output().length > 0)
@@ -2816,7 +2727,7 @@ function InlineTool(props: {
   const permission = useToolPermission(() => props.part)
 
   const error = createMemo(() =>
-    !props.running && props.part.state.status === "error" ? stripAnsi(props.part.state.error.message) : undefined,
+    !props.running && props.part.state.status === "error" ? props.part.state.error.message : undefined,
   )
 
   const denied = createMemo(
@@ -2896,8 +2807,8 @@ function BlockTool(props: BlockToolProps) {
   const ctx = use()
   const renderer = useRenderer()
   const [hover, setHover] = createSignal(false)
-  const error = createMemo(() =>
-    stripAnsi(props.error ?? (props.part?.state.status === "error" ? props.part.state.error.message : "")),
+  const error = createMemo(
+    () => props.error ?? (props.part?.state.status === "error" ? props.part.state.error.message : undefined),
   )
   const permission = useToolPermission(() => props.part)
   return (

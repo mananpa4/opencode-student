@@ -4,12 +4,10 @@
 @import "./theme.css" layer(theme);
 
 @import "./base.css" layer(base);
-@import "./scrollbar.css" layer(base);
 @import "katex/dist/katex.min.css" layer(base);
 
 @import "../data-display/accordion/accordion.css" layer(components);
 @import "../components/animated-number.css" layer(components);
-@import "../components/rolling-number.css" layer(components);
 @import "../components/app-icon.css" layer(components);
 @import "../components/card.css" layer(components);
 @import "../forms/checkbox/checkbox.css" layer(components);
@@ -28,13 +26,17 @@
 @import "../components/progress.css" layer(components);
 @import "../components/resize-handle.css" layer(components);
 @import "../components/spinner.css" layer(components);
-@import "../components/error-details.css" layer(components);
 @import "../components/scroll-view.css" layer(components);
 @import "../components/sticky-accordion-header.css" layer(components);
 @import "../navigation/tabs/tabs.css" layer(components);
 @import "../components/text-reveal.css" layer(components);
 @import "../components/text-strikethrough.css" layer(components);
 @import "../components/typewriter.css" layer(components);
+@import "./glass.css";
 
 @import "./utilities.css" layer(utilities);
 @import "./animations.css" layer(utilities);
+
+/* Unlayered on purpose: both the theme style element and the dev server's
+   component CSS are unlayered, so a layered override could never win. */
+@import "./glass-tokens.css";

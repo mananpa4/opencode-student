@@ -1,7 +1,7 @@
 export * as QuestionTool from "./question.js"
 
 import type { Context } from "@opencode/plugin/effect/plugin"
-import { ToolFailure } from "@opencode/ai/effect"
+import { ToolFailure } from "@opencode/ai"
 import { Effect, Schema } from "effect"
 import { Form } from "../../form.js"
 import { Permission } from "../../permission.js"
@@ -99,7 +99,7 @@ export const Plugin = {
                     answers: input.questions.map((_, index): Question.Answer => {
                       const value = state.answer[`q${index}`]
                       if (value === undefined) return []
-                      if (Array.isArray(value)) return Array.from(value)
+                      if (typeof value === "object") return Array.from(value)
                       return [String(value)]
                     }),
                   }

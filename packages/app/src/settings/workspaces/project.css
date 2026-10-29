@@ -327,7 +327,7 @@
   unicode-bidi: isolate;
 }
 
-:root[data-motion="reduce"] {
+@media (prefers-reduced-motion: reduce) {
   .project-settings-icon-overlay,
   .project-settings-color,
   .project-settings-shared-chevron {

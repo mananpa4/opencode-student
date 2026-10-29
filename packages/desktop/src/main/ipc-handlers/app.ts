@@ -8,6 +8,7 @@ import { setForceFocus } from "../native/debug"
 import { showCliInstaller } from "../native/install-cli"
 import { DesktopLogging, scoped } from "../native/logging"
 import { createMenu, sendMenuCommand } from "../native/menu"
+import { refreshTray, setTrayProjects } from "../native/tray"
 import { setNativeTranslations } from "../native/translations"
 import { IpcPortHandoff } from "../ipc-transport"
 import { ApplicationLifecycle } from "../lifecycle"
@@ -66,7 +67,9 @@ export const appHandlers = AppRpcs.toLayer(
             openExternal: (url) => runFork(openExternalURL(url)),
             relaunch: lifecycle.relaunch,
           })
+          refreshTray()
         }),
+      AppSetTrayProjects: ({ projects }) => Effect.sync(() => setTrayProjects(projects)),
       AppRelaunch: () => Effect.sync(lifecycle.relaunch),
     })
   }),

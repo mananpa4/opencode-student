@@ -1,9 +1,9 @@
 import type { Platform } from "@opencode/app/desktop"
 import type { ElectronAPI } from "../api-types"
-import { setPinchZoomEnabled, setZoomLevel, webviewZoom, zoomLevel } from "../window/zoom"
+import { setPinchZoomEnabled, webviewZoom } from "../window/zoom"
 import { windowFullscreen } from "../window/fullscreen"
 import { DragCancelEvent } from "../../shared/ipc-transport"
-import { createPluginBridge } from "../plugins"
+import { createExtensionBridge } from "../extensions"
 import { createDesktopFiles } from "./files"
 import { createDesktopMenuAction } from "./menu"
 import { createDesktopNotify } from "./notifications"
@@ -35,12 +35,7 @@ export function createDesktopPlatform(api: ElectronAPI, windowState: DesktopWind
       return fetch(input, init)
     },
     webviewZoom,
-    zoomLevel,
-    setZoomLevel,
     windowFullscreen,
-    requestMicrophone: () => api.requestMicrophone(),
-    setVoiceCallActive: (active) => api.setVoiceCallActive(active),
-    setTrafficLightsPosition: (position) => api.setTrafficLightsPosition(position),
     getPinchZoomEnabled: () => api.getPinchZoomEnabled(),
     setPinchZoomEnabled,
     onDragCancel: (callback) => {
@@ -52,7 +47,7 @@ export function createDesktopPlatform(api: ElectronAPI, windowState: DesktopWind
     checkAppExists: async (appName) => {
       return api.checkAppExists(appName)
     },
-    plugins: createPluginBridge(),
+    extensions: createExtensionBridge(),
   }
 }
 

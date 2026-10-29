@@ -3,7 +3,7 @@ import { Generation, ProgressEvent, QueuedEvent, type AwaitOptions } from "./gen
 import { Media } from "./media.js"
 import { MediaModel, composeRoute, tryRequest } from "./media-model.js"
 import { MediaRoute } from "./route/media.js"
-import { AIError, HttpOptions, MediaUsage, ProviderMetadata, ProviderOptions, type OpenString } from "./schema/index.js"
+import { AIError, HttpOptions, MediaUsage, ProviderMetadata, type OpenString } from "./schema/index.js"
 import { ImageClient, Service } from "./image-client.js"
 
 // ---------------------------------------------------------------------------
@@ -38,7 +38,6 @@ export class ImageModel<Options extends ImageOptions = ImageOptions> extends Med
       id: input.id,
       provider: route.protocol.provider,
       http: input.http,
-      providerOptions: input.providerOptions,
       route: composeRoute(route, input, collectResponse) as ImageRoute,
     })
   }
@@ -52,21 +51,30 @@ export const ImageModelSchema = Schema.declare((value): value is ImageModel => v
 // Request
 // ---------------------------------------------------------------------------
 
+export type ImageSize = `${number}x${number}`
+export const ImageSize = Schema.declare<ImageSize>(
+  (value): value is ImageSize => typeof value === "string" && /^\d+x\d+$/.test(value),
+  { title: "ImageSize" },
+)
+
 export type ImageAspectRatio = Media.AspectRatio
 export const ImageAspectRatio = Media.AspectRatio
 
-/** Size tier: `1K` is about as many pixels as 1024×1024 at the requested aspect, `2K` as 2048×2048. */
-export type ImageResolution = OpenString<"1K" | "2K" | "4K">
+export type ImageFormat = OpenString<"png" | "jpeg" | "webp">
 
 export class ImageRequest extends Schema.Class<ImageRequest>("Image.Request")({
   model: ImageModelSchema,
   prompt: Schema.String,
   /** Edit sources or style/subject references, in order. */
   images: Schema.optional(Schema.Array(Media.AssetSchema)),
+  /** Inpainting mask; routes that cannot honor it fail with `UnsupportedOperation`. */
+  mask: Schema.optional(Media.AssetSchema),
   n: Schema.optional(Schema.Int),
-  aspect: Schema.optional(ImageAspectRatio),
-  resolution: Schema.optional(Schema.String),
-  providerOptions: Schema.optional(ProviderOptions),
+  size: Schema.optional(ImageSize),
+  aspectRatio: Schema.optional(ImageAspectRatio),
+  seed: Schema.optional(Schema.Number),
+  format: Schema.optional(Schema.String),
+  providerOptions: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   http: Schema.optional(HttpOptions),
 }) {
   declare protected readonly _ImageRequest: void
@@ -84,10 +92,10 @@ export type ImageModelOptions<Model> = Model extends ImageModel<infer Options> ?
 
 export type ImageRequestInput<Model extends ImageModel = ImageModel> = Omit<
   ConstructorParameters<typeof ImageRequest>[0],
-  "model" | "providerOptions" | "http" | "resolution"
+  "model" | "providerOptions" | "http"
 > & {
   readonly model: Model
-  readonly resolution?: ImageResolution
+  readonly format?: ImageFormat
   readonly providerOptions?: NoInfer<ImageModelOptions<Model>>
   readonly http?: HttpOptions.Input
 }
@@ -99,6 +107,7 @@ export type ImageRequestInput<Model extends ImageModel = ImageModel> = Omit<
 export class ImageResponse extends Schema.Class<ImageResponse>("Image.Response")({
   images: Schema.Array(Media.AssetSchema),
   usage: Schema.optional(MediaUsage),
+  notices: Schema.optional(Schema.Array(Media.Notice)),
   providerMetadata: Schema.optional(ProviderMetadata),
 }) {
   get image() {
@@ -122,6 +131,7 @@ export const ImageOutputEvent = Schema.Struct({
 export const ImageFinishEvent = Schema.Struct({
   type: Schema.tag("finish"),
   usage: Schema.optional(MediaUsage),
+  notices: Schema.optional(Schema.Array(Media.Notice)),
   providerMetadata: Schema.optional(ProviderMetadata),
 }).annotate({ identifier: "Image.Event.Finish" })
 
@@ -151,6 +161,7 @@ const collectResponse = (events: ReadonlyArray<ImageEvent>): Effect.Effect<Image
     new ImageResponse({
       images: events.filter(ImageEvent.is.image).map((event) => event.image),
       usage: finish.usage,
+      notices: finish.notices,
       providerMetadata: finish.providerMetadata,
     }),
   )

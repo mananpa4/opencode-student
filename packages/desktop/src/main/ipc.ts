@@ -5,11 +5,11 @@ import { Effect, Layer } from "effect"
 import { RpcServer } from "effect/rpc"
 import { DesktopRpcs } from "../shared/ipc-rpc"
 import { DragCancelEvent, IpcTransportPort } from "../shared/ipc-transport"
-import { Plugins } from "./plugin"
+import { Extensions } from "./extension"
 import { DesktopFiles, openExternalURL } from "./files"
 import { appHandlers } from "./ipc-handlers/app"
 import { eventHandlers } from "./ipc-handlers/events"
-import { pluginHandlers } from "./ipc-handlers/plugins"
+import { extensionHandlers } from "./ipc-handlers/extensions"
 import { fileHandlers } from "./ipc-handlers/files"
 import { menuHandlers } from "./ipc-handlers/menu"
 import { storageHandlers } from "./ipc-handlers/storage"
@@ -18,10 +18,11 @@ import { IpcPortHandoff, IpcServerProtocolLive } from "./ipc-transport"
 import { ApplicationLifecycle } from "./lifecycle"
 import { showCliInstaller } from "./native/install-cli"
 import { createMenu, sendMenuCommand } from "./native/menu"
+import { installTray, startTray } from "./native/tray"
 import { DesktopCli } from "./service/desktop-cli"
 import { getLastFocusedWindow } from "./windows"
 
-const services = Layer.mergeAll(DesktopFiles.layer, Plugins.layer)
+const services = Layer.mergeAll(DesktopFiles.layer, Extensions.layer)
 
 const handlers = Layer.mergeAll(
   appHandlers,
@@ -30,7 +31,7 @@ const handlers = Layer.mergeAll(
   windowHandlers,
   menuHandlers,
   eventHandlers,
-  pluginHandlers,
+  extensionHandlers,
 )
 
 export const layer = RpcServer.layer(DesktopRpcs, { disableFatalDefects: true }).pipe(
@@ -59,11 +60,6 @@ export const registerIpcHandlers = Effect.gen(function* () {
 
   const wire = (win: BrowserWindow) => {
     win.webContents.on("before-input-event", (_event, input) => {
-      // Ctrl+R renames the session in the renderer, so the default menu's Reload must not take it.
-      win.webContents.setIgnoreMenuShortcuts(
-        input.control && !input.meta && !input.shift && !input.alt && input.key.toLowerCase() === "r",
-      )
-
       if (input.type !== "keyDown" || input.key !== "Escape") return
       win.webContents.send(DragCancelEvent)
     })
@@ -88,6 +84,10 @@ export const registerIpcHandlers = Effect.gen(function* () {
     BrowserWindow.getAllWindows().forEach((win) => wire(win))
   })
   yield* Effect.addFinalizer(() => Effect.sync(() => app.off("browser-window-created", onWindowCreated)))
+
+  // The window and IPC layers exist now, so a tray click can reach them.
+  yield* installTray
+  startTray({ trigger: menu.trigger, createWindow: lifecycle.createWindow })
 
   return {
     installMenu: () => createMenu(menu),

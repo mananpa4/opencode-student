@@ -98,18 +98,10 @@ export const Plugin = define({
       const match = Effect.fn("ConfigInstructionPlugin.match")(function* (source: string) {
         const expanded = source.startsWith("~/") ? path.join(global.home, source.slice(2)) : source
         const options = { absolute: true, include: "file", dot: true } as const
-        if (path.isAbsolute(expanded)) {
-          // Keep literal directories working as before. When no literal parent exists, treat
-          // the whole source as a glob (`~/notes/**/*.md`) with `/` separators.
-          const directory = path.dirname(expanded)
-          const hasLiteralParent = yield* fs.isDir(directory)
+        if (path.isAbsolute(expanded))
           return yield* fs
-            .scan(hasLiteralParent ? path.basename(expanded) : expanded.replaceAll(path.sep, "/"), {
-              ...options,
-              ...(hasLiteralParent ? { cwd: directory } : {}),
-            })
+            .scan(path.basename(expanded), { ...options, cwd: path.dirname(expanded) })
             .pipe(Effect.orElseSucceed(() => [] as string[]))
-        }
         if (project) return yield* fs.globUp(expanded, start, root)
         if (!discovery.global) return []
         return yield* fs
@@ -217,7 +209,8 @@ export const Plugin = define({
         Effect.forkScoped({ startImmediately: true }),
       )
       // Subscribe before the first config read so an update in between still triggers a reload.
-      yield* ctx.event.subscribe({ types: ["config.updated"] }).pipe(
+      yield* ctx.event.subscribe().pipe(
+        Stream.filter((event) => event.type === "config.updated"),
         Stream.runForEach(() => reconfigure().pipe(Effect.andThen(refresh()), Effect.andThen(discovery.reload()))),
         Effect.forkScoped({ startImmediately: true }),
       )

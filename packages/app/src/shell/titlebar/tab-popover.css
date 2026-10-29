@@ -121,7 +121,7 @@
   }
 }
 
-:root[data-motion="reduce"] {
+@media (prefers-reduced-motion: reduce) {
   [data-component="session-tab-popover"],
   [data-component="session-tab-popover"][data-closed] {
     animation: none;
